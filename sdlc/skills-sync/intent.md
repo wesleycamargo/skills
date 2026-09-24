@@ -9,6 +9,7 @@ A developer configures a project with an interactive wizard and safely synchroni
 ## Scope
 - Discover and select skills; save project-specific configuration.
 - Synchronize one project with one configured Git repository, with bidirectional, pull-only, and push-only modes.
+- Let each project configure publishing as a local Git commit, pushed branch, pull request, or direct update of its configured main branch.
 - Detect independent edits, conflicts, and deletions; report status and prevent silent data loss.
 - Preserve unselected skills and unrelated project files.
 - Provide an npm command with an interactive setup wizard and noninteractive operation from saved configuration.
@@ -25,13 +26,15 @@ A developer configures a project with an interactive wizard and safely synchroni
 - Support other people's Git repositories, including private repositories accessible through their credentials, without hardcoded account dependencies.
 - Fail clearly if noninteractive configuration or credentials are missing.
 - Never overwrite conflicting edits or propagate deletions without explicit choice.
+- Direct updates to main require explicit configuration, no unresolved conflicts, and permission under branch protection rules.
 
 ## Success indicators
 - A user runs the wizard, selects a repository and skills, and gets saved configuration and usable installed skills.
 - Edits from either side synchronize without losing independent changes.
+- The chosen publication mode behaves as configured.
 - Concurrent edits to the same content are reported; a repeated sync with no changes makes no modifications.
 - Another user configures their own repository without modifying the tool.
 
 ## Assumptions and open questions
 - **Assumption:** The first release handles one configured source repository per project.
-- **Open question for specification:** Define whether publishing means a local Git commit, a pushed branch, or a pull request in each execution mode.
+- **For specification:** Define the wizard prompts, defaults, and exact Git behavior for each publication mode, including when main advances during synchronization.
