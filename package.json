@@ -1,6 +1,6 @@
 {
   "name": "@wesleycamargo/skills-sync",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "repository": {
     "type": "git",
@@ -26,5 +26,6 @@
   },
   "dependencies": {
     "skills": "1.7.0"
-  }
+  },
+  "license": "GPL-3.0-or-later"
 }

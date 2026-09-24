@@ -64,7 +64,7 @@ npm run build
 npm pack
 
 cd /path/to/project
-npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.3.tgz
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.4.tgz
 npx --no-install skills-sync init
 ```
 
