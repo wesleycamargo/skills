@@ -34,6 +34,10 @@
 - For pull-request mode, retain the authenticated `gh` CLI requirement and the check that the source branch has not advanced before publishing.
 - Do not weaken conflict handling: incompatible or binary edits must remain visible for manual resolution.
 
+## Versioning
+
+- Mark every commit subject with `[major]`, `[minor]`, or `[patch]`; an unmarked commit counts as minor, and merge and `[skip ci]` commits do not count. `npm run release:preview` shows the next version. Until the workflow applies it (see `sdlc/semver-release-bump/`), set that version in `package.json` and `package-lock.json` in a `[skip ci]` release commit, and tag the released commit with `node scripts/release-version.mjs tag <version>`.
+
 ## Dependencies and package metadata
 
 - Keep `skills` pinned to the tested upstream CLI version unless an intentional upgrade is validated and its lockfile is updated.

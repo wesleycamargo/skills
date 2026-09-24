@@ -89,6 +89,27 @@ The release script prevents automatic retries of uncertain npmjs versions:
 NPM_OTP=<current-six-digit-code> bash scripts/publish-npm.sh
 ```
 
+### Versioning
+
+Each release computes its version from the commit subjects since the last release tag. Put a marker in square brackets in each commit subject:
+
+- `[major]` for a breaking change;
+- `[minor]` for new behavior;
+- `[patch]` for fixes and documentation.
+
+A commit with no marker counts as `[minor]`. The release takes the largest marker among its commits: `major` over `minor`, and `minor` over `patch`. Merge commits and `[skip ci]` commits do not count. Stable releases are tagged `v<version>`; the tags and npmjs show what was released.
+
+Preview the next version from the current commit:
+
+```sh
+npm run release:preview
+npm run release:preview -- --channel beta
+```
+
+Until the release workflow applies the computed version itself, set the previewed version in `package.json` and `package-lock.json` in a `[skip ci]` release commit, publish, and then tag the released commit with `node scripts/release-version.mjs tag <version>`.
+
+### Publishing with an OTP
+
 Use the local OTP path only to bootstrap the first public version. Later npmjs releases use the manual npm workflow dispatch with npm trusted publishing and provenance. Configure the npm trusted publisher for this repository and workflow before using that path. The script skips an existing public version and stops on staged, 2FA, conflict, or uncertain registry results; resolve those npm states before another attempt.
 
 ## Commands
