@@ -112,7 +112,7 @@ test('opens one pull request, updates its branch, then settles after merge', { s
   const bin = path.join(temp, 'bin'); await mkdir(bin);
   const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   const gitWrapper = `#!/bin/sh\nif [ "$1" = clone ] && [ "$6" = 'https://github.com/test/repo.git' ]; then exec '${gitPath}' clone --quiet --branch "$4" --single-branch '${bare}' "$7"; fi\nexec '${gitPath}' "$@"\n`;
-  const ghWrapper = `#!/bin/sh\nif [ "$1" = pr ] && [ "$2" = list ]; then [ -f '${path.join(temp, 'pr-created')}' ] && echo 1; exit 0; fi\nif [ "$1" = pr ] && [ "$2" = create ]; then touch '${path.join(temp, 'pr-created')}'; exit 0; fi\nexit 0\n`;
+  const ghWrapper = `#!/bin/sh\nif [ "$1" = pr ] && [ "$2" = list ]; then [ -f '${path.join(temp, 'pr-created')}' ] && echo '1 OPEN'; exit 0; fi\nif [ "$1" = pr ] && [ "$2" = create ]; then touch '${path.join(temp, 'pr-created')}'; exit 0; fi\nexit 0\n`;
   await writeFile(path.join(bin, 'git'), gitWrapper); await writeFile(path.join(bin, 'gh'), ghWrapper);
   await chmod(path.join(bin, 'git'), 0o755); await chmod(path.join(bin, 'gh'), 0o755);
   const env = { PATH: `${bin}:${process.env.PATH}` };
