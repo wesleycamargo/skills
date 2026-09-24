@@ -1,4 +1,4 @@
-# Specification: Skills synchronization CLI
+# Specification: Skills synchronization CLI (v1)
 
 ## Context
 
@@ -9,11 +9,11 @@ The approved [intent](intent.md) defines a generic npm tool that configures sele
 - Guide a developer through setup without requiring hand-written configuration.
 - Synchronize selected skills safely in either direction, with visible status, conflict handling, and idempotent results.
 - Support configurable publication: local commit, pushed branch, pull request, direct main update, or explicit main content override.
-- Work with any configured Git repository accessible to the user, locally and in unattended environments.
+- Work with any configured Git repository accessible to the user, locally and in unattended command line runs.
 
 ## Non-goals
 
-A hosted registry, cross-project distribution service, multiple skill sources in one project, CI workflow generation, or npm publication in this initial version.
+A hosted registry, cross-project distribution service, multiple skill sources in one project, GitHub Actions integration or workflow generation, or npm publication in this initial version.
 
 ## Functional requirements
 
@@ -23,7 +23,7 @@ A hosted registry, cross-project distribution service, multiple skill sources in
 - **FR-2:** Discover skill directories containing `SKILL.md` at the configured source path. The user may select all skills or named skills. Persist selections in a versioned, project-local configuration that can be reviewed and edited. Reject duplicate names and invalid paths.
 - **FR-3:** Support bidirectional, pull-only, and push-only synchronization. A pull-only source must never be written; a push-only run must never replace local skill content with remote content. Source and target paths may differ.
 - **FR-4:** On a noninteractive terminal, use saved configuration without prompts; if absent or invalid, fail with an actionable error. Never print authentication secrets.
-- **FR-5:** Provide `status` and `diff` as read-only previews and `pull`, `push`, and `sync` actions. An action must preview intended content changes and publication destination before applying them, unless the caller explicitly opts into a noninteractive confirmed run.
+- **FR-5:** Provide `status` and `diff` as read-only previews and `pull`, `push`, and `sync` actions. An action must preview intended content changes and publication destination before applying them, unless the caller explicitly opts into a noninteractive confirmed run. This CLI capability does not include a GitHub Actions workflow in v1.
 - **FR-6:** Preserve all excluded or unselected skills and unrelated files. Do not claim ownership of a skill whose name collides with an unrelated locally managed directory without explicit adoption.
 - **FR-7:** Installation to supported agents may use the existing `skills` CLI, but synchronization must operate on the canonical configured project copy. Installing or updating agent copies must not bypass conflict checks or discard unsynchronized local edits.
 
@@ -37,10 +37,10 @@ A hosted registry, cross-project distribution service, multiple skill sources in
 
 ### Publication
 
-- **FR-13:** Persist one publication mode per project: `local-commit`, `branch`, `pull-request`, `main`, or `override-main`. The wizard explains the effects and required access. A run can inspect status without publishing. Publishing a remote change requires an explicit `--publish` choice or a separately configured unattended publication setting.
+- **FR-13:** Persist one publication mode per project: `local-commit`, `branch`, `pull-request`, `main`, or `override-main`. The wizard explains the effects and required access. A run can inspect status without publishing. Publishing a remote change requires an explicit `--publish` choice or an explicit command line confirmation for an unattended run.
 - **FR-14:** `local-commit` stages only managed skill content in a local checkout of the source repository, creates a commit only when it has a diff, and never pushes. `branch` pushes changes on a named non-main branch. `pull-request` pushes a branch and opens or updates a PR targeting the configured source branch, without creating duplicates for the same pending change.
 - **FR-15:** `main` publishes a normal commit directly to the configured main branch only when comparison has no unresolved conflicts. Branch protection, missing write permission, or concurrent changes must yield an actionable failure without bypassing policy.
-- **FR-16:** `override-main` is a separate, explicitly selected mode that can replace conflicting content **only within selected managed skills** by a normal commit. Before the override, list the exact files and versions to be replaced and require per-run confirmation identifying the source repository and branch. For unattended execution, require an explicit override flag in addition to saved configuration; missing confirmation fails without writes. It must never force-push, rewrite history, bypass branch protection, or affect unrelated files. Concurrent upstream movement requires revalidation and fresh confirmation if the replacement set changes.
+- **FR-16:** `override-main` is a separate, explicitly selected mode that can replace conflicting content **only within selected managed skills** by a normal commit. Before the override, list the exact files and versions to be replaced and require per-run confirmation identifying the source repository and branch. For noninteractive execution, require an explicit override flag in addition to saved configuration; missing confirmation fails without writes. It must never force-push, rewrite history, bypass branch protection, or affect unrelated files. Concurrent upstream movement requires revalidation and fresh confirmation if the replacement set changes.
 - **FR-17:** Remote publication works through the user's existing Git authentication. Read-only operations must work without write credentials where access allows. Publication failures must leave local skill files and baseline in a recoverable state and must report what was already changed.
 
 ## Interfaces and contracts
@@ -56,9 +56,9 @@ Invalid configuration, inaccessible repository, missing credentials, unavailable
 
 ## Nonfunctional requirements
 
-- Cross-platform behavior on supported Node.js runtimes for Windows, macOS, Linux, and CI.
+- Cross-platform behavior on supported Node.js runtimes for Windows, macOS, and Linux.
 - No credential storage in config, logs, or baseline.
-- Stable machine-readable exit status for automation and clear human output; no prompts in CI.
+- Stable machine-readable exit status for automation and clear human output; no prompts in noninteractive mode.
 - Respect existing Git working changes and branch policies; stage only intended managed files.
 - Pin or constrain integration with the upstream `skills` package so changes to that CLI do not silently change synchronization safety.
 
@@ -77,4 +77,4 @@ Invalid configuration, inaccessible repository, missing credentials, unavailable
 
 - **Assumption:** “Main” refers to the configured source branch, typically named `main`.
 - **Assumption:** A local Git checkout is needed for `local-commit`; for a remote URL, the tool may maintain a dedicated checkout but must show its location and avoid editing the project's unrelated repository.
-- **Specification choice:** The first version supports one source per project. Multi-source ownership and CI automation can follow validation of the local tool.
+- **Specification choice:** The first version supports one source per project. Multi-source ownership and GitHub Actions automation is specified separately in [the follow-up specification](../skills-sync-github-actions/spec.md) and is excluded from v1.
