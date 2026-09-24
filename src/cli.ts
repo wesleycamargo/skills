@@ -53,7 +53,7 @@ function summary(changes: Change[]): void {
   for (const c of changes) console.log(`${c.kind.padEnd(9)} ${c.skill}/${c.file} local:${hash(c.local)} source:${hash(c.source)} baseline:${hash(c.before)}`);
 }
 
-async function ensureFresh(dir: string, original: string, repository: string, branch: string): Promise<void> {
+async function ensureFresh(dir: string, original: string, branch: string): Promise<void> {
   await run('git', ['fetch', '--quiet', 'origin', branch], dir);
   if (await run('git', ['rev-parse', `origin/${branch}`], dir) !== original) throw new Error('Source branch advanced. Run status and retry; no publication was attempted.');
 }
@@ -62,7 +62,7 @@ async function publication(dir: string, config: Config, original: string): Promi
   const mode = config.publication.mode;
   const changed = await run('git', ['status', '--porcelain'], dir);
   if (!changed) return;
-  await ensureFresh(dir, original, config.source.repository, config.source.branch);
+  await ensureFresh(dir, original, config.source.branch);
   for (const skill of config.selection) await run('git', ['add', '--', `${config.source.path}/${skill}`], dir);
   if (!(await run('git', ['diff', '--cached', '--name-only'], dir))) return;
   if (['branch', 'pull-request'].includes(mode)) {
@@ -99,19 +99,22 @@ async function execute(): Promise<void> {
     const applicable = changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push');
     const conflicts = changes.filter(c => c.kind === 'conflict' || c.kind === 'delete');
     if (conflicts.length) throw new Error(`${conflicts.length} conflict or deletion proposals; resolve these before applying.`);
-    if (!applicable.length) return;
+    if (!applicable.length) {
+      if (cmd === 'sync' && changes.length === 0) {
+        for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
+        await saveState(root, state);
+      }
+      return;
+    }
+    if (applicable.some(c => c.kind === 'push') && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
+    if (config.publication.mode === 'override-main' && applicable.some(c => c.kind === 'push')) throw new Error('Override-main publication is not implemented yet; no files were changed.');
     if (!confirmed && (await prompt('Apply the listed changes? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
-    await ensureFresh(source.dir, original, config.source.repository, config.source.branch);
+    await ensureFresh(source.dir, original, config.source.branch);
     for (const change of applicable) {
       if (change.kind === 'pull') await applyFile(root, config.target.path, change, 'local', false);
       else await applyFile(source.dir, config.source.path, change, 'source', false);
     }
-    if (applicable.some(c => c.kind === 'push')) {
-      if (publish) {
-        if (config.publication.mode === 'override-main' && (!flags.has('--override-main') || !confirmed)) throw new Error('Override requires --override-main and --yes');
-        await publication(source.dir, config, original);
-      } else { console.log('Source changes are in a temporary checkout; use --publish to publish them.'); return; }
-    }
+    if (applicable.some(c => c.kind === 'push')) await publication(source.dir, config, original);
     if (config.publication.mode !== 'pull-request' && config.publication.mode !== 'branch' && config.publication.mode !== 'local-commit') {
       for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
       await saveState(root, state);
