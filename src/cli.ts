@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { readdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, writeFile, readdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { checkout, head, run } from './git.js';
 import { Config, configPath, loadConfig, validateConfig } from './config.js';
-import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, saveState, tryMerge } from './sync.js';
+import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, sameFiles, saveState, State, tryMerge } from './sync.js';
 
 const root = process.cwd();
 const cmd = process.argv[2] || (stdin.isTTY ? 'init' : 'status');
@@ -53,7 +52,7 @@ async function installAgents(config: Config, sourceRoot: string): Promise<void> 
       const desired = await inventory(stage, directory, skill);
       if (!Object.keys(desired).length) continue;
       const current = await inventory(root, directory, skill);
-      if (Object.keys(current).length && JSON.stringify(current) !== JSON.stringify(desired))
+      if (Object.keys(current).length && !sameFiles(current, desired))
         throw new Error(`Agent copy ${directory}/${skill} has local edits; resolve them before reinstalling.`);
       installs.push({ destination: directory, skill, desired });
     }
@@ -67,7 +66,8 @@ async function installAgents(config: Config, sourceRoot: string): Promise<void> 
 
 async function init(): Promise<void> {
   let old: Config | undefined;
-  try { old = await loadConfig(root); } catch { /* First setup. */ }
+  try { old = await loadConfig(root); }
+  catch (error) { if (!(error as Error).message.startsWith('No .agents/skills-sync.json')) throw error; }
   const repository = await prompt('Skills Git URL or local checkout', old?.source.repository);
   const branch = await prompt('Source branch', old?.source.branch || 'main');
   const sourcePath = await prompt('Source skills directory', old?.source.path || 'skills');
@@ -109,22 +109,111 @@ async function ensureFresh(dir: string, original: string, branch: string): Promi
   if (await run('git', ['rev-parse', `origin/${branch}`], dir) !== original) throw new Error('Source branch advanced. Run status and retry; no publication was attempted.');
 }
 
+async function openSource(config: Config): Promise<{ dir: string; cleanup: () => Promise<void>; localCommit: boolean }> {
+  if (config.publication.mode !== 'local-commit') return { ...(await checkout(config.source.repository, config.source.branch)), localCommit: false };
+  const candidate = path.resolve(root, config.source.repository);
+  try {
+    if (!(await stat(candidate)).isDirectory()) throw new Error('not a directory');
+    const dir = await run('git', ['rev-parse', '--show-toplevel'], candidate);
+    const branch = await run('git', ['symbolic-ref', '--short', 'HEAD'], dir);
+    if (branch !== config.source.branch) throw new Error(`Local-commit mode requires the source checkout on ${config.source.branch}; it is on ${branch}`);
+    if (cmd !== 'status' && cmd !== 'diff') {
+      const dirty = await run('git', ['status', '--porcelain', '--', ...config.selection.map(skill => `${config.source.path}/${skill}`)], dir);
+      if (dirty) throw new Error('Commit or stash existing source skill changes before syncing in local-commit mode');
+    }
+    return { dir, cleanup: async () => {}, localCommit: true };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if ((error as Error).message.startsWith('Local-commit') || (error as Error).message.startsWith('Commit or stash')) throw error;
+    throw new Error('local-commit mode requires source.repository to be a local Git checkout path on the configured branch');
+  }
+}
+
 async function ensurePullRequest(dir: string, branch: string, base: string): Promise<void> {
   const existing = await run('gh', ['pr', 'list', '--head', branch, '--base', base, '--json', 'number', '--jq', '.[0].number // empty'], dir);
   if (!existing) await run('gh', ['pr', 'create', '--head', branch, '--base', base, '--title', 'Sync selected skills', '--body', 'Synchronize configured skills from a project.'], dir);
 }
 
-async function publication(dir: string, config: Config, original: string): Promise<void> {
+async function reconcilePending(state: State, config: Config, sourceDir: string): Promise<void> {
+  const pending = state.pending;
+  if (!pending) return;
+  if (pending.branch !== config.publication.branch) throw new Error('Pending publication branch differs from configuration; resolve it before changing branches.');
+  const branch = await checkout(config.source.repository, pending.branch);
+  try {
+    for (const skill of config.selection) {
+      if (!sameFiles(await inventory(branch.dir, config.source.path, skill), pending.skills[skill]))
+        throw new Error(`Pending branch ${pending.branch} changed independently in ${skill}; resolve it manually before syncing.`);
+    }
+  } finally { await branch.cleanup(); }
+  let merged = true;
+  for (const skill of config.selection) {
+    const upstream = await inventory(sourceDir, config.source.path, skill);
+    if (!sameFiles(upstream, pending.skills[skill])) merged = false;
+  }
+  if (merged) {
+    for (const skill of config.selection) state.skills[skill] = await inventory(sourceDir, config.source.path, skill);
+    delete state.pending;
+    console.log(`Pending publication on ${pending.branch} is now present in the source branch.`);
+    return;
+  }
+  for (const skill of config.selection) {
+    const upstream = await inventory(sourceDir, config.source.path, skill);
+    if (!sameFiles(upstream, state.skills[skill])) throw new Error(`Source skills changed while ${pending.branch} is pending. Resolve the PR and run sync again.`);
+  }
+}
+
+async function replaceSkillFiles(dir: string, directory: string, skill: string, desired: Record<string, string>): Promise<void> {
+  const current = await inventory(dir, directory, skill);
+  for (const file of Object.keys(current)) if (!(file in desired)) await applyFile(dir, directory, { skill, file, kind: 'delete' }, 'local', true);
+  for (const [file, content] of Object.entries(desired)) await applyFile(dir, directory, { skill, file, kind: 'pull', source: content }, 'local', false);
+}
+
+async function publication(dir: string, config: Config, original: string, pending?: State['pending']): Promise<void> {
   const mode = config.publication.mode;
+  if (mode === 'pull-request') {
+    if (!/github\.com[:/][^/]+\/[^/]+(?:\.git)?$/.test(config.source.repository)) throw new Error('Pull request mode requires a GitHub source repository');
+    await run('gh', ['auth', 'status'], dir);
+  }
   const changed = await run('git', ['status', '--porcelain'], dir);
   if (!changed) return;
-  await ensureFresh(dir, original, config.source.branch);
+  if (mode !== 'local-commit') await ensureFresh(dir, original, config.source.branch);
+  const desired: Record<string, Record<string, string>> = {};
+  for (const skill of config.selection) desired[skill] = await inventory(root, config.target.path, skill);
   for (const skill of config.selection) await run('git', ['add', '--', `${config.source.path}/${skill}`], dir);
   if (!(await run('git', ['diff', '--cached', '--name-only'], dir))) return;
   if (['branch', 'pull-request'].includes(mode)) {
     const remoteBranch = await run('git', ['ls-remote', '--heads', 'origin', config.publication.branch!], dir);
     if (remoteBranch) {
       await run('git', ['fetch', '--quiet', 'origin', config.publication.branch!], dir);
+      if (pending) {
+        await run('git', ['reset', '--hard', 'HEAD'], dir);
+        for (const skill of config.selection) await run('git', ['clean', '-fd', '--', `${config.source.path}/${skill}`], dir);
+        await run('git', ['switch', '-C', config.publication.branch!, 'FETCH_HEAD'], dir);
+        for (const skill of config.selection) await replaceSkillFiles(dir, config.source.path, skill, desired[skill]);
+        for (const skill of config.selection) await run('git', ['add', '--', `${config.source.path}/${skill}`], dir);
+        if (await run('git', ['diff', '--cached', '--name-only'], dir)) {
+          await run('git', ['-c', 'user.name=skills-sync', '-c', 'user.email=skills-sync@users.noreply.github.com', 'commit', '-m', 'Update pending skill sync'], dir);
+          await run('git', ['push', 'origin', `HEAD:refs/heads/${config.publication.branch}`], dir);
+        }
+        if (mode === 'pull-request') await ensurePullRequest(dir, config.publication.branch!, config.source.branch);
+        return;
+      }
+      let alreadyMerged = false;
+      try { await run('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', `origin/${config.source.branch}`], dir); alreadyMerged = true; }
+      catch { /* A branch not contained in main may include independent work. */ }
+      if (alreadyMerged) {
+        await run('git', ['reset', '--hard', 'HEAD'], dir);
+        for (const skill of config.selection) await run('git', ['clean', '-fd', '--', `${config.source.path}/${skill}`], dir);
+        await run('git', ['switch', '-C', config.publication.branch!, `origin/${config.source.branch}`], dir);
+        for (const skill of config.selection) await replaceSkillFiles(dir, config.source.path, skill, desired[skill]);
+        for (const skill of config.selection) await run('git', ['add', '--', `${config.source.path}/${skill}`], dir);
+        if (await run('git', ['diff', '--cached', '--name-only'], dir)) {
+          await run('git', ['-c', 'user.name=skills-sync', '-c', 'user.email=skills-sync@users.noreply.github.com', 'commit', '-m', 'Sync selected skills'], dir);
+          await run('git', ['push', 'origin', `HEAD:refs/heads/${config.publication.branch}`], dir);
+        }
+        if (mode === 'pull-request') await ensurePullRequest(dir, config.publication.branch!, config.source.branch);
+        return;
+      }
       const differences = await run('git', ['diff', '--name-only', `FETCH_HEAD`, '--', config.source.path], dir);
       if (!differences) {
         console.log(`Existing ${config.publication.branch} already contains the selected content.`);
@@ -136,12 +225,10 @@ async function publication(dir: string, config: Config, original: string): Promi
     await run('git', ['switch', '-c', config.publication.branch!], dir);
   }
   await run('git', ['-c', 'user.name=skills-sync', '-c', 'user.email=skills-sync@users.noreply.github.com', 'commit', '-m', 'Sync selected skills'], dir);
-  if (mode === 'local-commit') { console.log(`Commit kept in temporary checkout ${dir}`); return; }
+  if (mode === 'local-commit') { console.log(`Created local commit in ${dir}`); return; }
   const branch = ['branch', 'pull-request'].includes(mode) ? config.publication.branch! : config.source.branch;
   await run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`], dir);
   if (mode === 'pull-request') {
-    const url = config.source.repository;
-    if (!/github\.com[:/][^/]+\/[^/]+(?:\.git)?$/.test(url)) throw new Error('Pull request mode currently requires a GitHub remote');
     await ensurePullRequest(dir, branch, config.source.branch);
   }
 }
@@ -150,20 +237,23 @@ async function execute(): Promise<void> {
   const config = await loadConfig(root);
   if (cmd === 'pull' && config.direction === 'push') throw new Error('Project is configured push-only');
   if (cmd === 'push' && config.direction === 'pull') throw new Error('Project is configured pull-only');
-  const source = await checkout(config.source.repository, config.source.branch);
+  const source = await openSource(config);
   let keepCheckout = false;
   try {
     const original = await head(source.dir);
     const state = await loadState(root, config);
+    await reconcilePending(state, config, source.dir);
     const changes: Change[] = [];
     for (const skill of config.selection) {
       const [local, upstream] = await Promise.all([inventory(root, config.target.path, skill), inventory(source.dir, config.source.path, skill)]);
+      if (state.pending && sameFiles(local, state.pending.skills[skill]) && sameFiles(upstream, state.skills[skill])) continue;
       const takeSource = flags.has(`--adopt-source=${skill}`), takeProject = flags.has(`--adopt-project=${skill}`);
       if (takeSource && takeProject) throw new Error(`Choose only one adoption side for ${skill}`);
       const baseline = state.skills[skill] ?? (takeSource ? local : takeProject ? upstream : undefined);
       for (const change of planSkill(skill, baseline, local, upstream, config.direction)) changes.push(config.direction === 'bidirectional' ? await tryMerge(change) : change);
     }
     summary(changes);
+    if (state.pending) console.log(`Pending publication: ${state.pending.branch} (source branch has not accepted it yet).`);
     if (cmd === 'diff') { await showDiffs(changes); return; }
     if (cmd === 'status') return;
     const override = config.publication.mode === 'override-main' && flags.has('--override-main') && confirmed &&
@@ -184,8 +274,11 @@ async function execute(): Promise<void> {
     if (!applicable.length) {
       if (cmd === 'sync' && changes.length === 0) {
         await installAgents(config, source.dir);
-        for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
-        await saveState(root, state);
+        if (state.pending) console.log(`Publication is still pending on ${state.pending.branch}; baseline remains unchanged.`);
+        else {
+          for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
+          await saveState(root, state);
+        }
       }
       return;
     }
@@ -193,19 +286,24 @@ async function execute(): Promise<void> {
     if (writesSource && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
     if (config.publication.mode === 'override-main' && writesSource && !override) throw new Error(`Override requires --yes --override-main --override-target=${config.source.repository}@${config.source.branch}`);
     if (!confirmed && (await prompt('Apply the listed changes? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
-    await ensureFresh(source.dir, original, config.source.branch);
+    if (!source.localCommit) await ensureFresh(source.dir, original, config.source.branch);
     for (const change of applicable) {
       const localWrite = change.kind === 'pull' || change.kind === 'merge' || (deletions.includes(change) && change.source === undefined);
       const sourceWrite = change.kind === 'push' || change.kind === 'merge' || replacements.includes(change) || (deletions.includes(change) && change.local === undefined);
       if (localWrite) await applyFile(root, config.target.path, change, 'local', deletions.includes(change));
       if (sourceWrite) await applyFile(source.dir, config.source.path, change, 'source', deletions.includes(change));
     }
-    if (writesSource) await publication(source.dir, config, original);
+    if (writesSource) {
+      await publication(source.dir, config, original, state.pending);
+      if (config.publication.mode === 'branch' || config.publication.mode === 'pull-request') {
+        const pendingSkills: Record<string, Record<string, string>> = {};
+        for (const skill of config.selection) pendingSkills[skill] = await inventory(root, config.target.path, skill);
+        state.pending = { branch: config.publication.branch!, baseRevision: original, skills: pendingSkills };
+      }
+    }
     await installAgents(config, source.dir);
-    if (config.publication.mode !== 'pull-request' && config.publication.mode !== 'branch' && config.publication.mode !== 'local-commit') {
-      for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
-      await saveState(root, state);
-    } else if (!applicable.some(c => c.kind === 'push')) {
+    if ((config.publication.mode === 'pull-request' || config.publication.mode === 'branch') && writesSource) await saveState(root, state);
+    else {
       for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
       await saveState(root, state);
     }
