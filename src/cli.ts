@@ -66,6 +66,16 @@ async function publication(dir: string, config: Config, original: string): Promi
   for (const skill of config.selection) await run('git', ['add', '--', `${config.source.path}/${skill}`], dir);
   if (!(await run('git', ['diff', '--cached', '--name-only'], dir))) return;
   if (['branch', 'pull-request'].includes(mode)) {
+    const remoteBranch = await run('git', ['ls-remote', '--heads', 'origin', config.publication.branch!], dir);
+    if (remoteBranch) {
+      await run('git', ['fetch', '--quiet', 'origin', config.publication.branch!], dir);
+      const differences = await run('git', ['diff', '--name-only', `FETCH_HEAD`, '--', config.source.path], dir);
+      if (!differences) {
+        console.log(`Existing ${config.publication.branch} already contains the selected content.`);
+        return;
+      }
+      throw new Error(`Publication branch ${config.publication.branch} has other content; inspect it before updating.`);
+    }
     await run('git', ['switch', '-c', config.publication.branch!], dir);
   }
   await run('git', ['-c', 'user.name=skills-sync', '-c', 'user.email=skills-sync@users.noreply.github.com', 'commit', '-m', 'Sync selected skills'], dir);
@@ -96,9 +106,15 @@ async function execute(): Promise<void> {
     }
     summary(changes);
     if (cmd === 'status' || cmd === 'diff') return;
-    const applicable = changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push');
-    const conflicts = changes.filter(c => c.kind === 'conflict' || c.kind === 'delete');
+    const override = config.publication.mode === 'override-main' && flags.has('--override-main') && confirmed &&
+      flags.has(`--override-target=${config.source.repository}@${config.source.branch}`);
+    const deletionChoices = new Set([...flags].filter(f => f.startsWith('--delete=')).map(f => f.slice('--delete='.length)));
+    const deletions = changes.filter(c => c.kind === 'delete' && deletionChoices.has(`${c.skill}/${c.file}`));
+    const replacements = override ? changes.filter(c => c.kind === 'conflict' && c.local !== undefined) : [];
+    const applicable = [...changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push'), ...deletions, ...replacements];
+    const conflicts = changes.filter(c => (c.kind === 'conflict' || c.kind === 'delete') && !applicable.includes(c));
     if (conflicts.length) throw new Error(`${conflicts.length} conflict or deletion proposals; resolve these before applying.`);
+    if (replacements.length) for (const c of replacements) console.log(`OVERRIDE ${c.skill}/${c.file}: source ${hash(c.source)} becomes local ${hash(c.local)} in ${config.source.repository}@${config.source.branch}`);
     if (!applicable.length) {
       if (cmd === 'sync' && changes.length === 0) {
         for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
@@ -106,15 +122,16 @@ async function execute(): Promise<void> {
       }
       return;
     }
-    if (applicable.some(c => c.kind === 'push') && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
-    if (config.publication.mode === 'override-main' && applicable.some(c => c.kind === 'push')) throw new Error('Override-main publication is not implemented yet; no files were changed.');
+    const writesSource = applicable.some(c => c.kind === 'push' || replacements.includes(c) || (deletions.includes(c) && c.local === undefined));
+    if (writesSource && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
+    if (config.publication.mode === 'override-main' && writesSource && !override) throw new Error(`Override requires --yes --override-main --override-target=${config.source.repository}@${config.source.branch}`);
     if (!confirmed && (await prompt('Apply the listed changes? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
     await ensureFresh(source.dir, original, config.source.branch);
     for (const change of applicable) {
-      if (change.kind === 'pull') await applyFile(root, config.target.path, change, 'local', false);
-      else await applyFile(source.dir, config.source.path, change, 'source', false);
+      if (change.kind === 'pull' || (deletions.includes(change) && change.source === undefined)) await applyFile(root, config.target.path, change, 'local', deletions.includes(change));
+      else await applyFile(source.dir, config.source.path, change, 'source', deletions.includes(change));
     }
-    if (applicable.some(c => c.kind === 'push')) await publication(source.dir, config, original);
+    if (writesSource) await publication(source.dir, config, original);
     if (config.publication.mode !== 'pull-request' && config.publication.mode !== 'branch' && config.publication.mode !== 'local-commit') {
       for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
       await saveState(root, state);
@@ -122,7 +139,7 @@ async function execute(): Promise<void> {
       for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
       await saveState(root, state);
     }
-    if (config.publication.mode === 'local-commit' && applicable.some(c => c.kind === 'push')) keepCheckout = true;
+    if (config.publication.mode === 'local-commit' && writesSource) keepCheckout = true;
   } finally { if (!keepCheckout) await source.cleanup(); }
 }
 
