@@ -2,22 +2,67 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { readdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import os from 'node:os';
 import { checkout, head, run } from './git.js';
 import { Config, configPath, loadConfig, validateConfig } from './config.js';
-import { applyFile, Change, discover, hash, inventory, loadState, planSkill, saveState, tryMerge } from './sync.js';
+import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, saveState, tryMerge } from './sync.js';
 
 const root = process.cwd();
 const cmd = process.argv[2] || (stdin.isTTY ? 'init' : 'status');
 const flags = new Set(process.argv.slice(3));
 const confirmed = flags.has('--yes');
 const publish = flags.has('--publish');
+const require = createRequire(import.meta.url);
 
 async function prompt(question: string, defaultValue = ''): Promise<string> {
   if (!stdin.isTTY) throw new Error(`Interactive input required: ${question}`);
   const rl = createInterface({ input: stdin, output: stdout });
   try { return (await rl.question(`${question}${defaultValue ? ` [${defaultValue}]` : ''}: `)).trim() || defaultValue; }
   finally { rl.close(); }
+}
+
+async function locateAgentSkillDirs(dir: string, prefix = ''): Promise<string[]> {
+  const found: string[] = [];
+  let entries;
+  try { entries = await readdir(path.join(dir, prefix), { withFileTypes: true }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return found; throw error; }
+  for (const entry of entries) if (entry.isDirectory() && !entry.isSymbolicLink()) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.name === 'skills' && rel !== '.agents/skills') found.push(rel);
+    else if (rel !== '.git' && !rel.startsWith('.git/')) found.push(...await locateAgentSkillDirs(dir, rel));
+  }
+  return found;
+}
+
+async function installAgents(config: Config, sourceRoot: string): Promise<void> {
+  if (!config.agents.length) return;
+  if (config.target.path !== '.agents/skills') throw new Error('Agent installation currently requires target.path=.agents/skills');
+  const stage = await mkdtemp(path.join(os.tmpdir(), 'skills-install-'));
+  try {
+    await run('git', ['init', '-q'], stage);
+    const cli = require.resolve('skills/bin/cli.mjs');
+    const args = [cli, 'add', path.join(sourceRoot, config.source.path), ...config.selection.flatMap(skill => ['--skill', skill]),
+      ...config.agents.flatMap(agent => ['--agent', agent]), '--copy', '--yes'];
+    await run(process.execPath, args, stage);
+    const dirs = await locateAgentSkillDirs(stage);
+    const installs: Array<{ destination: string; skill: string; desired: Record<string, string> }> = [];
+    for (const directory of dirs) for (const skill of config.selection) {
+      const desired = await inventory(stage, directory, skill);
+      if (!Object.keys(desired).length) continue;
+      const current = await inventory(root, directory, skill);
+      if (Object.keys(current).length && JSON.stringify(current) !== JSON.stringify(desired))
+        throw new Error(`Agent copy ${directory}/${skill} has local edits; resolve them before reinstalling.`);
+      installs.push({ destination: directory, skill, desired });
+    }
+    for (const item of installs) for (const [file, content] of Object.entries(item.desired)) {
+      const target = path.join(root, item.destination, item.skill, ...file.split('/'));
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, Buffer.from(content, 'base64'));
+    }
+  } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
 async function init(): Promise<void> {
@@ -38,7 +83,7 @@ async function init(): Promise<void> {
   if (selection.some(s => !available.includes(s))) throw new Error('Selection contains a skill absent from source');
   const direction = await prompt('Direction (bidirectional/pull/push)', old?.direction || 'bidirectional');
   const agents = (await prompt('Agents (comma separated, blank to skip)', old?.agents.join(',') || '')).split(',').map(s => s.trim()).filter(Boolean);
-  if (agents.length) throw new Error('Agent installation is still under development. Leave agents blank for this draft.');
+  if (agents.length && targetPath !== '.agents/skills') throw new Error('Agent installation currently requires .agents/skills as the project skills directory.');
   const mode = await prompt('Publish mode (local-commit/branch/pull-request/main/override-main)', old?.publication.mode || 'local-commit');
   const publicationBranch = ['branch', 'pull-request'].includes(mode) ? await prompt('Publication branch', old?.publication.branch || 'skills-sync/update') : undefined;
   const config = validateConfig({ version: 1, source: { repository, branch, path: sourcePath }, target: { path: targetPath }, selection, direction, agents, publication: { mode, branch: publicationBranch } });
@@ -46,12 +91,17 @@ async function init(): Promise<void> {
   if ((await prompt('Save this configuration? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
   await mkdir(path.dirname(configPath(root)), { recursive: true });
   await writeFile(configPath(root), JSON.stringify(config, null, 2) + '\n');
-  console.log(`Saved ${configPath(root)}. Run skills-sync sync to preview changes.`);
+  console.log(`Saved ${configPath(root)}. Initial sync will preview selected skill changes.`);
+  await execute();
 }
 
 function summary(changes: Change[]): void {
   if (!changes.length) { console.log('No changes.'); return; }
   for (const c of changes) console.log(`${c.kind.padEnd(9)} ${c.skill}/${c.file} local:${hash(c.local)} source:${hash(c.source)} baseline:${hash(c.before)}`);
+}
+
+async function showDiffs(changes: Change[]): Promise<void> {
+  for (const change of changes) console.log(`${change.skill}/${change.file} [${change.kind}]\n${await formatDiff(change)}`);
 }
 
 async function ensureFresh(dir: string, original: string, branch: string): Promise<void> {
@@ -108,10 +158,14 @@ async function execute(): Promise<void> {
     const changes: Change[] = [];
     for (const skill of config.selection) {
       const [local, upstream] = await Promise.all([inventory(root, config.target.path, skill), inventory(source.dir, config.source.path, skill)]);
-      for (const change of planSkill(skill, state.skills[skill], local, upstream, config.direction)) changes.push(config.direction === 'bidirectional' ? await tryMerge(change) : change);
+      const takeSource = flags.has(`--adopt-source=${skill}`), takeProject = flags.has(`--adopt-project=${skill}`);
+      if (takeSource && takeProject) throw new Error(`Choose only one adoption side for ${skill}`);
+      const baseline = state.skills[skill] ?? (takeSource ? local : takeProject ? upstream : undefined);
+      for (const change of planSkill(skill, baseline, local, upstream, config.direction)) changes.push(config.direction === 'bidirectional' ? await tryMerge(change) : change);
     }
     summary(changes);
-    if (cmd === 'status' || cmd === 'diff') return;
+    if (cmd === 'diff') { await showDiffs(changes); return; }
+    if (cmd === 'status') return;
     const override = config.publication.mode === 'override-main' && flags.has('--override-main') && confirmed &&
       flags.has(`--override-target=${config.source.repository}@${config.source.branch}`);
     const deletionChoices = new Set([...flags].filter(f => f.startsWith('--delete=')).map(f => f.slice('--delete='.length)));
@@ -120,10 +174,16 @@ async function execute(): Promise<void> {
     const replacements = override ? changes.filter(c => c.kind === 'conflict' && c.local !== undefined) : [];
     const applicable = [...changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push' || c.kind === 'merge'), ...deletions, ...replacements];
     const conflicts = changes.filter(c => (c.kind === 'conflict' || c.kind === 'delete') && !applicable.includes(c));
-    if (conflicts.length) throw new Error(`${conflicts.length} conflict or deletion proposals; resolve these before applying.`);
+    if (conflicts.length) {
+      const firstSetup = config.selection.filter(skill => !state.skills[skill]);
+      const guidance = firstSetup.length ? ` For existing skills, explicitly choose --adopt-source=${firstSetup[0]} or --adopt-project=${firstSetup[0]}; confirm each deletion separately with --delete=skill/file.` : '';
+      throw new Error(`${conflicts.length} conflict or deletion proposals; resolve these before applying.${guidance}`);
+    }
     if (replacements.length) for (const c of replacements) console.log(`OVERRIDE ${c.skill}/${c.file}: source ${hash(c.source)} becomes local ${hash(c.local)} in ${config.source.repository}@${config.source.branch}`);
+    await showDiffs(applicable);
     if (!applicable.length) {
       if (cmd === 'sync' && changes.length === 0) {
+        await installAgents(config, source.dir);
         for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
         await saveState(root, state);
       }
@@ -141,6 +201,7 @@ async function execute(): Promise<void> {
       if (sourceWrite) await applyFile(source.dir, config.source.path, change, 'source', deletions.includes(change));
     }
     if (writesSource) await publication(source.dir, config, original);
+    await installAgents(config, source.dir);
     if (config.publication.mode !== 'pull-request' && config.publication.mode !== 'branch' && config.publication.mode !== 'local-commit') {
       for (const skill of config.selection) state.skills[skill] = await inventory(root, config.target.path, skill);
       await saveState(root, state);
