@@ -123,14 +123,14 @@ test('reconfiguring prefills saved values and warns about skills and agents that
     selection: ['beta', 'gone'], direction: 'push', agents: ['windsurf', 'codex', 'unknown'], publication: { mode: 'branch', branch: 'sync' } };
   const { prompts, call, output } = scripted({ ...base, 'Publish mode': 'branch', 'Publication branch': 'sync' });
   await runWizard(prompts, { old, discoverSkills });
-  assert.equal(call('Skills Git URL or local checkout')!.options.initialValue, '/src');
-  assert.equal(call('Source branch')!.options.initialValue, 'dev');
-  assert.equal(call('Source skills directory')!.options.initialValue, 'lib');
+  assert.equal(call('Skills Git URL or local checkout')!.options.defaultValue, '/src');
+  assert.equal(call('Source branch')!.options.defaultValue, 'dev');
+  assert.equal(call('Source skills directory')!.options.defaultValue, 'lib');
   assert.deepEqual(call('Select skills to sync')!.options.initialSelected, ['beta']);
   assert.equal(call('Direction')!.options.initialValue, 'push');
   assert.deepEqual(call('Which agents do you want to install to?')!.options.initialSelected, ['windsurf']);
   assert.equal(call('Publish mode')!.options.initialValue, 'branch');
-  assert.equal(call('Publication branch')!.options.initialValue, 'sync');
+  assert.equal(call('Publication branch')!.options.defaultValue, 'sync');
   assert.ok(output.includes('warn:Saved skills no longer in the source: gone'));
   assert.ok(output.includes('warn:Saved agents not offered by skills: codex, unknown'));
 });

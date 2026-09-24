@@ -41,8 +41,8 @@ export async function runWizard(prompts: Prompts, { old, discoverSkills }: Wizar
 }
 
 async function ask(prompts: Prompts, old: Config | undefined, discoverSkills: WizardDeps['discoverSkills']): Promise<Config> {
-  const text = async (message: string, initialValue: string | undefined, validate: (value: string) => string | undefined) =>
-    answer(await prompts.text({ message, initialValue, validate })).trim();
+  const text = async (message: string, defaultValue: string | undefined, validate: (value: string) => string | undefined) =>
+    answer(await prompts.text({ message, defaultValue, validate })).trim();
 
   const repository = await text('Skills Git URL or local checkout', old?.source.repository, fieldError.repository);
   const branch = await text('Source branch', old?.source.branch || 'main', v => fieldError.branch(v.trim()));
