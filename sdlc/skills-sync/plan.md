@@ -20,9 +20,9 @@ The v1 implementation provides local CLI behavior and noninteractive commands. T
 ### Task 1 — Scaffold and configuration contract
 Status: completed
 
-- [ ] Add a TypeScript npm CLI with a pinned supported Node.js version range and executable `skills-sync`.
-- [ ] Define and validate versioned configuration and state schemas, safe relative paths, source identity, selection, direction, agents, and publication mode.
-- [ ] Establish deterministic errors and noninteractive behavior without reading secrets from stored files.
+- [x] Add a TypeScript npm CLI with a pinned supported Node.js version range and executable `skills-sync`.
+- [x] Define and validate versioned configuration and state schemas, safe relative paths, source identity, selection, direction, agents, and publication mode.
+- [x] Establish deterministic errors and noninteractive behavior without reading secrets from stored files.
 
 Validation: Package builds; config round-trips, unsupported versions, unsafe paths, and missing settings produce clear results.
 
@@ -30,9 +30,9 @@ Validation: Package builds; config round-trips, unsupported versions, unsafe pat
 Status: completed
 Depends on: Task 1
 
-- [ ] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
-- [ ] Implement init and reconfigure prompts for repository, branch, paths, selected skills, direction, agents, publication mode, and final review.
-- [ ] Connect supported agent installation through the upstream `skills` interface without bypassing conflict checks; expose unsupported agent errors.
+- [x] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
+- [x] Implement init and reconfigure prompts for repository, branch, paths, selected skills, direction, agents, publication mode, and final review.
+- [x] Connect supported agent installation through the upstream `skills` interface without bypassing conflict checks; expose unsupported agent errors.
 
 Validation: An interactive setup against a fixture repository produces a reviewable config and installs chosen skills without changing unselected content; reconfiguration prefills prior answers.
 
@@ -40,9 +40,9 @@ Validation: An interactive setup against a fixture repository produces a reviewa
 Status: completed
 Depends on: Tasks 1 and 2
 
-- [ ] Inventory all files under selected skill directories, identify source/local/baseline changes including first adoption, missing files, name collisions, and exclusions.
-- [ ] Produce a deterministic per-file change set and human-readable status/diff; handle compatible independent changes and report overlapping conflicts without touching affected files.
-- [ ] Track deletion proposals separately and require explicit choice before they can be applied.
+- [x] Inventory all files under selected skill directories, identify source/local/baseline changes including first adoption, missing files, name collisions, and exclusions.
+- [x] Produce a deterministic per-file change set and human-readable status/diff; handle compatible independent changes and report overlapping conflicts without touching affected files.
+- [x] Track deletion proposals separately and require explicit choice before they can be applied.
 
 Validation: Fixture cases cover new and unchanged skills, both change directions, disjoint changes, conflicts, missing baseline, deletes, exclusions, and unrelated files; status/diff cause no writes.
 
@@ -50,9 +50,9 @@ Validation: Fixture cases cover new and unchanged skills, both change directions
 Status: completed
 Depends on: Task 3
 
-- [ ] Implement pull, push, and sync direction rules and change previews, including explicit noninteractive confirmation.
-- [ ] Recheck source revision and local file content before writes; apply only the approved change set.
-- [ ] Persist baselines only after verified outcomes, and record/report partial outcomes so an interrupted or failed run can be resumed safely.
+- [x] Implement pull, push, and sync direction rules and change previews, including explicit noninteractive confirmation.
+- [x] Recheck source revision and local file content before writes; apply only the approved change set.
+- [x] Persist baselines only after verified outcomes, and record/report partial outcomes so an interrupted or failed run can be resumed safely.
 
 Validation: Pull-only and push-only cannot write the opposite side; conflict and interrupted-run fixtures preserve existing edits; repeated successful sync makes no changes.
 
@@ -91,6 +91,6 @@ Run the package build and focused unit/integration tests. Exercise wizard setup,
 
 ## Handover
 
-Current: Draft implementation in pull request #1. The CLI supports the wizard, upstream agent installation, explicit adoption, text diffs, baseline tracking, compatible UTF-8 merges, deletion and override confirmations, and all five publication modes. Eighteen unit and isolated Git integration tests pass, including branch/PR pending updates and agent-copy protection.
-Next: Complete Task 5 publication failure and branch-policy checks, then Task 6 documentation and validation against isolated copies of the two intended repositories and a second unrelated repository.
-Blockers: Real authenticated GitHub PR behavior and Windows/macOS runs have not been exercised. Do not merge the draft until these release checks pass.
+Current: Draft PR #1 includes the v1 CLI, wizard, upstream agent installation adapter, per-skill state, conflict and deletion handling, all publication modes, and pending branch/PR recovery. Eighteen automated tests pass after a clean `npm ci`; the PR lifecycle test mocks GitHub's CLI/API.
+Next: Finish real GitHub PR/authentication checks, protected-branch and concurrent-main tests, then run the isolated two-repository walkthrough and complete platform documentation.
+Blockers: Real authenticated GitHub operations and Windows/macOS execution are not available in this validation run. Keep the PR in draft until those checks pass.
