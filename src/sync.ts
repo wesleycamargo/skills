@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir, mkdir, writeFile, rm, lstat } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile, rm, lstat, mkdtemp } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import os from 'node:os';
 import path from 'node:path';
 import { Config, safePath } from './config.js';
 
@@ -73,8 +76,23 @@ export function planSkill(skill: string, base: Files | undefined, local: Files, 
   return changes;
 }
 
+const exec = promisify(execFile);
+export async function tryMerge(change: Change): Promise<Change> {
+  if (change.kind !== 'conflict' || change.before === undefined || change.local === undefined || change.source === undefined) return change;
+  const decoded = [change.local, change.before, change.source].map(s => Buffer.from(s, 'base64'));
+  if (decoded.some(b => b.includes(0) || !Buffer.from(b.toString('utf8'), 'utf8').equals(b))) return change;
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'skills-merge-'));
+  try {
+    const names = ['local', 'base', 'source'].map(n => path.join(dir, n));
+    await Promise.all(names.map((name, i) => writeFile(name, decoded[i])));
+    const { stdout } = await exec('git', ['merge-file', '--stdout', names[0], names[1], names[2]], { maxBuffer: 10 * 1024 * 1024 });
+    return { ...change, kind: 'merge', merged: Buffer.from(stdout).toString('base64') };
+  } catch { return change; }
+  finally { await rm(dir, { recursive: true, force: true }); }
+}
+
 export async function applyFile(root: string, directory: string, change: Change, destination: 'source' | 'local', allowDelete: boolean): Promise<void> {
-  const value = destination === 'source' ? change.local : change.source;
+  const value = change.kind === 'merge' ? change.merged : destination === 'source' ? change.local : change.source;
   const target = path.join(root, directory, change.skill, change.file);
   if (value === undefined) {
     if (!allowDelete) throw new Error(`Deletion requires --allow-delete: ${change.skill}/${change.file}`);
