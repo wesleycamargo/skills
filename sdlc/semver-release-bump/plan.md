@@ -55,24 +55,30 @@ Validation:
 - Completed 2026-09-24: `scripts/release-version.command.test.mjs` has 9 tests against disposable repositories with a bare origin and a mock `npm`. They cover preview, beta numbering, apply editing only the two files and writing `GITHUB_OUTPUT`, nothing to release, recovery tagging and pushing, preview-only recovery, a missing `gitHead`, registry failure versus 404, and tag creation and refusal. `npm test` runs them (`test:release-version`). Deviation: the version is written by editing the JSON files directly instead of running `npm version`, which keeps the command independent of npm and easy to test. Against the real repository, `npm run release:preview` printed `0.3.2`, and `--channel beta` printed `0.3.2-beta.0` (spec acceptance criterion 2).
 
 ### Task 3 — Workflow integration
-Status: pending
+Status: completed
 Depends on: Task 2, and the `npm-default-publication` workflow implementation
 
-- [ ] Set `version` to `0.0.0-development` in `package.json` and `package-lock.json`, and update the README tarball example (moved here from Task 4). This must land together with the version step and the channel/version check.
-- [ ] Rebase onto, or merge, the finished `npm-default-publication` branch. Do not edit its channel logic.
-- [ ] Checkout with `fetch-depth: 0` and `fetch-tags: true`. Set job permissions to `contents: write` and `id-token: write`. Add `concurrency: { group: release, cancel-in-progress: false }`.
-- [ ] Configure the tag author for Git (`github-actions[bot]`), and run `node scripts/release-version.mjs apply --channel <channel>` before the build. Skip the build, publish, and tag steps when the output is `none`.
-- [ ] After `publish-npm.sh` succeeds on the `latest` channel, run the `tag` mode with the computed version. Prereleases are never tagged.
-- [ ] Extend the workflow configuration tests (the `npm-default-publication` spec already requires them): check the permissions, the history and tag fetch, the concurrency setting, that `apply` comes before the build, that tagging only happens for `latest`, and that no `--force` appears.
+- [x] Set `version` to `0.0.0-development` in `package.json` and `package-lock.json`, and update the README tarball example (moved here from Task 4). This must land together with the version step and the channel/version check.
+- [x] Rebase onto, or merge, the finished `npm-default-publication` branch. Do not edit its channel logic.
+- [x] Checkout with `fetch-depth: 0` and `fetch-tags: true`. Set job permissions to `contents: write` and `id-token: write`. Add `concurrency: { group: release, cancel-in-progress: false }`.
+- [x] Configure the tag author for Git (`github-actions[bot]`), and run `node scripts/release-version.mjs apply --channel <channel>` before the build. Skip the build, publish, and tag steps when the output is `none`.
+- [x] After `publish-npm.sh` succeeds on the `latest` channel, run the `tag` mode with the computed version. Prereleases are never tagged.
+- [x] Extend the workflow configuration tests (the `npm-default-publication` spec already requires them): check the permissions, the history and tag fetch, the concurrency setting, that `apply` comes before the build, that tagging only happens for `latest`, and that no `--force` appears.
 
 Validation:
 - The workflow tests pass. A review confirms spec acceptance criterion 3.
+- Completed 2026-09-24: the `npm-default-publication` workflow had not been implemented, so it was implemented here in the same commit, and both specifications are satisfied:
+  - one npmjs job with no GitHub Packages job, registry input, or `packages: write`;
+  - the channel comes from the trigger;
+  - `publish-npm.sh` takes `RELEASE_CHANNEL`, checks the version against the channel, refuses `0.0.0-development`, and passes `--tag`.
+
+  `scripts/publish-npm.test.sh` grew from 9 to 17 checks: channel publishing, three mismatch cases, an unknown channel, an uncertain result, and workflow policy and versioning. Deviation: the publisher now polls reads for up to 12 × 10 s instead of 3 × 2 s. Stable versions take about a minute to become readable, and it only reads, so FR-12's no-retry rule holds. Note: `actions/setup-node` with `registry-url` still sets its own placeholder `NODE_AUTH_TOKEN`; the workflow sets no credential itself, and that setup is the one known to work with trusted publishing.
 
 ### Task 4 — Committed version and documentation
-Status: in-progress
+Status: completed
 Depends on: Task 2
 
-- [ ] Set `version` to `0.0.0-development` in `package.json` and `package-lock.json`. Update the README tarball example to match, and make sure `npm pack --dry-run` lists the same files.
+- [x] Set `version` to `0.0.0-development` in `package.json` and `package-lock.json`. Update the README tarball example to match, and make sure `npm pack --dry-run` lists the same files.
 - [x] Document in the README and `AGENTS.md`:
   - the markers and their precedence;
   - the minor default;
@@ -85,6 +91,7 @@ Depends on: Task 2
 Validation:
 - Spec acceptance criterion 4 holds, and `npm test` passes.
 - Documentation completed 2026-09-24: the README has a Versioning section, and a Versioning rule was added to the repository `AGENTS.md`. The bump rule in the workspace-level `/workspaces/skills/AGENTS.md`, which is outside Git, was replaced too. Deviation: the `0.0.0-development` version change is **deferred to Task 3**. The current workflow still publishes the committed version, and there is no channel/version check yet, so committing `0.0.0-development` now could publish it as `latest`. Until then, the documented interim process is a `[skip ci]` commit with the previewed version, a publish, and `release-version.mjs tag`.
+- The version change moved here from Task 4 was completed with Task 3. The committed version is `0.0.0-development`, and `npm pack --dry-run` lists the same 10 files. The README and both `AGENTS.md` files describe the automatic flow, and GitHub Packages is a legacy note.
 
 ### Task 5 — First automated release
 Status: pending
@@ -113,7 +120,7 @@ Validation:
 
 ## Handover
 
-Current: Tasks 1–2 completed. Task 4 documentation is done, and its version change moved to Task 3.
-Next: Task 3, once the `npm-default-publication` workflow implementation lands.
-Blockers: Task 3 waits for `npm-default-publication`, which has an intent and spec but no workflow changes yet.
-Remaining validation: spec acceptance criteria 3, 4, and 6. Criteria 1, 2, and 5 are met.
+Current: Task 5 — first automated release.
+Next: push `feature/skills-sync-v1` (beta release `0.3.2-beta.0`), then run the workflow manually for stable `0.3.2` and tag `v0.3.2`.
+Blockers: None
+Remaining validation: spec acceptance criterion 6.
