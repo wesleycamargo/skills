@@ -27,7 +27,7 @@ Release automation publishes `@wesleycamargo/skills-sync` to the public npm regi
 - No npm credential may be stored in the repository or workflow.
 - Publishing must retain explicit test and build gates and must not retry an uncertain version.
 - The work must remain isolated in `.worktrees/` at the repository root.
-- A decision about whether pushes should publish npmjs is required before specifying or changing workflow triggers, because it controls irreversible releases.
+- Pushes to `feature/*` publish only prerelease versions under the `beta` dist-tag; pushes to `main` and manual dispatches publish stable versions under `latest`.
 
 ## Success Criteria
 
@@ -38,4 +38,4 @@ Release automation publishes `@wesleycamargo/skills-sync` to the public npm regi
 
 ## Open Questions
 
-- Should pushes to `main` and `feature/*` automatically publish to npmjs, replacing the prior GitHub Packages behavior, or should npmjs publication remain manual-only?
+None.
