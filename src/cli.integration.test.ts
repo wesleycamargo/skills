@@ -301,3 +301,52 @@ test('apply without a terminal or --yes fails without writing', async t => {
   await assert.rejects(readFile(path.join(project, '.agents/skills/example/SKILL.md')));
   await assert.rejects(readFile(path.join(project, '.agents/skills-sync-state.json')));
 });
+
+/** A source with several skills, and a project config that saves no selection. */
+async function fixtureAll(t: test.TestContext, direction: string) {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-all-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const bare = path.join(temp, 'source.git'), seed = path.join(temp, 'seed'), project = path.join(temp, 'project');
+  await mkdir(seed); await mkdir(project);
+  await git(['init', '--bare', '--initial-branch=main', bare], temp);
+  await git(['clone', bare, seed], temp);
+  await git(['config', 'user.name', 'Test'], seed); await git(['config', 'user.email', 'test@example.invalid'], seed);
+  for (const skill of ['example', 'second', 'draft-x']) {
+    await mkdir(path.join(seed, 'skills', skill), { recursive: true });
+    await writeFile(path.join(seed, 'skills', skill, 'SKILL.md'), `---\nname: ${skill}\n---\n${skill}\n`);
+  }
+  await git(['add', '.'], seed); await git(['commit', '-m', 'initial'], seed); await git(['push', '-u', 'origin', 'main'], seed);
+  await mkdir(path.join(project, '.agents/skills/local'), { recursive: true });
+  await writeFile(path.join(project, '.agents/skills/local/SKILL.md'), '---\nname: local\n---\nlocal\n');
+  await writeFile(path.join(project, '.skillsignore'), '# drafts stay out\ndraft-*\n');
+  await writeFile(path.join(project, '.agents/skills-sync.json'), JSON.stringify({
+    version: 1, source: { repository: bare, branch: 'main', path: 'skills' }, target: { path: '.agents/skills' },
+    direction, agents: [], publication: { mode: 'main' }
+  }));
+  return { temp, bare, seed, project };
+}
+
+test('without a selection, pull syncs every source skill except ignored ones and skips project-only skills', async t => {
+  const { project } = await fixtureAll(t, 'pull');
+  const result = invoke('sync', project, '--yes');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(path.join(project, '.agents/skills/example/SKILL.md'), 'utf8'), '---\nname: example\n---\nexample\n');
+  assert.equal(await readFile(path.join(project, '.agents/skills/second/SKILL.md'), 'utf8'), '---\nname: second\n---\nsecond\n');
+  await assert.rejects(readFile(path.join(project, '.agents/skills/draft-x/SKILL.md')));
+  assert.match(result.stdout, /Skipping local: only in the project, and pull-only projects never publish\. Add it to \.skillsignore to silence this\./);
+  assert.equal(await readFile(path.join(project, '.agents/skills/local/SKILL.md'), 'utf8'), '---\nname: local\n---\nlocal\n');
+});
+
+test('without a selection, a new project skill needs --publish and is then published', async t => {
+  const { project, bare, temp } = await fixtureAll(t, 'bidirectional');
+  const preview = invoke('sync', project, '--yes');
+  assert.equal(preview.status, 1);
+  assert.match(preview.stderr, /Local changes need source publication/);
+  const published = invoke('sync', project, '--yes', '--publish');
+  assert.equal(published.status, 0, published.stderr);
+  const check = path.join(temp, 'check');
+  await git(['clone', bare, check], temp);
+  assert.equal(await readFile(path.join(check, 'skills/local/SKILL.md'), 'utf8'), '---\nname: local\n---\nlocal\n');
+  await assert.rejects(readFile(path.join(project, '.agents/skills/draft-x/SKILL.md')));
+  assert.equal(await readFile(path.join(project, '.agents/skills/second/SKILL.md'), 'utf8'), '---\nname: second\n---\nsecond\n');
+});

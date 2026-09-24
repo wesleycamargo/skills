@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
-import { Config, safePath } from './config.js';
+import { Config, safePath, validSkillName } from './config.js';
 
 export type Files = Record<string, string>;
 export interface State {
@@ -54,6 +54,43 @@ export async function discover(root: string, directory: string): Promise<string[
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   return names.sort();
+}
+
+/** Skill-name patterns from .skillsignore text: one per line, `#` comments, `*` and `?` wildcards. */
+export function parseSkillsIgnore(text: string): string[] {
+  return text.split(/\r?\n/).map(line => line.trim().replace(/\/+$/, '')).filter(line => line && !line.startsWith('#'));
+}
+
+export function isIgnored(skill: string, patterns: string[]): boolean {
+  return patterns.some(pattern => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`).test(skill));
+}
+
+/** Patterns from `<root>/.skillsignore`; a missing file ignores nothing, and a symlink is refused. */
+export async function readSkillsIgnore(root: string): Promise<string[]> {
+  const file = path.join(root, '.skillsignore');
+  try { if (!(await lstat(file)).isFile()) throw new Error('.skillsignore must be a regular file, not a symlink or directory'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
+  return parseSkillsIgnore(await readFile(file, 'utf8'));
+}
+
+/**
+ * Skills managed when no explicit selection is saved: everything in the source, the project, and the
+ * baseline, minus .skillsignore. One-sided skills that were never synced are skipped when the direction
+ * could not sync them.
+ */
+export function resolveSkills({ source, project, baseline, ignore, direction }: {
+  source: string[]; project: string[]; baseline: string[]; ignore: string[]; direction: Config['direction'];
+}): { skills: string[]; skipped: { skill: string; side: 'project' | 'source' }[]; invalid: string[] } {
+  const skills: string[] = [], skipped: { skill: string; side: 'project' | 'source' }[] = [], invalid: string[] = [];
+  for (const skill of [...new Set([...source, ...project, ...baseline])].sort()) {
+    if (isIgnored(skill, ignore)) continue;
+    if (!validSkillName(skill)) { invalid.push(skill); continue; }
+    const known = baseline.includes(skill);
+    if (!known && direction === 'pull' && !source.includes(skill)) skipped.push({ skill, side: 'project' });
+    else if (!known && direction === 'push' && !project.includes(skill)) skipped.push({ skill, side: 'source' });
+    else skills.push(skill);
+  }
+  return { skills, skipped, invalid };
 }
 
 /** Single-line `description:` from a skill's SKILL.md frontmatter, for display only. Symlinks are not followed. */

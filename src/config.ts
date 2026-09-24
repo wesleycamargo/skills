@@ -7,7 +7,8 @@ export interface Config {
   version: 1;
   source: { repository: string; branch: string; path: string };
   target: { path: string };
-  selection: string[];
+  /** Legacy explicit skill list; without it, every discovered skill not in .skillsignore is managed. */
+  selection?: string[];
   direction: Direction;
   agents: string[];
   publication: { mode: Publication; branch?: string };
@@ -23,6 +24,10 @@ export function safePath(value: unknown, label: string): string {
 }
 
 /** Field checks shared by validateConfig and the setup wizard; each returns an error message or undefined. */
+/** A skill directory name that is safe to manage. */
+export const validSkillName = (s: unknown): s is string =>
+  typeof s === 'string' && s.trim() !== '' && s !== '.' && s !== '..' && !/[\\/\0-\x1f\x7f*?\[\]:]/.test(s);
+
 export const fieldError = {
   repository: (value: unknown) => typeof value !== 'string' || !value.trim() ? 'Missing source.repository' : undefined,
   branch: (value: unknown) => typeof value !== 'string' || !/^[\w][\w.\/-]*$/.test(value) || value.includes('..') ? 'Invalid source.branch' : undefined,
@@ -38,7 +43,7 @@ export function validateConfig(input: unknown): Config {
   for (const error of [fieldError.repository(c.source.repository), fieldError.branch(c.source.branch)]) if (error) throw new Error(error);
   safePath(c.source.path, 'source.path');
   safePath(c.target?.path, 'target.path');
-  if (!Array.isArray(c.selection) || !c.selection.every((s: unknown) => typeof s === 'string' && s.trim() !== '' && s !== '.' && s !== '..' && !/[\\/\0-\x1f\x7f*?\[\]:]/.test(s)) || new Set(c.selection).size !== c.selection.length) throw new Error('selection must contain unique skill directory names');
+  if (c.selection !== undefined && (!Array.isArray(c.selection) || !c.selection.every(validSkillName) || new Set(c.selection).size !== c.selection.length)) throw new Error('selection must contain unique skill directory names');
   if (!['bidirectional', 'pull', 'push'].includes(c.direction)) throw new Error('Invalid direction');
   if (!Array.isArray(c.agents) || !c.agents.every((s: unknown) => typeof s === 'string')) throw new Error('Invalid agents');
   if (!['local-commit', 'branch', 'pull-request', 'main', 'override-main'].includes(c.publication?.mode)) throw new Error('Invalid publication mode');

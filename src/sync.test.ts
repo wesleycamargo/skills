@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyFile, formatDiff, planSkill, readSkillDescription, tryMerge } from './sync.js';
+import { applyFile, formatDiff, isIgnored, parseSkillsIgnore, planSkill, readSkillDescription, readSkillsIgnore, resolveSkills, tryMerge } from './sync.js';
 import { mkdtemp, mkdir, symlink, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,4 +60,36 @@ test('reads a single-line skill description without following symlinks', async t
   assert.equal(await readSkillDescription(root, 'skills', 'folded'), undefined);
   assert.equal(await readSkillDescription(root, 'skills', 'none'), undefined);
   assert.equal(await readSkillDescription(root, 'skills', 'linked'), undefined);
+});
+
+test('.skillsignore entries skip comments and whitespace, and match names with wildcards', () => {
+  const patterns = parseSkillsIgnore('# drafts\n  draft-*  \n\nlegacy/\nv?-skill\n');
+  assert.deepEqual(patterns, ['draft-*', 'legacy', 'v?-skill']);
+  assert.ok(isIgnored('draft-notes', patterns));
+  assert.ok(isIgnored('legacy', patterns));
+  assert.ok(isIgnored('v2-skill', patterns));
+  assert.ok(!isIgnored('v10-skill', patterns));
+  assert.ok(!isIgnored('legacy-tools', patterns));
+});
+
+test('a missing .skillsignore ignores nothing and a symlinked one fails', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-ignore-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.deepEqual(await readSkillsIgnore(root), []);
+  await writeFile(path.join(root, 'real'), 'alpha\n');
+  await symlink(path.join(root, 'real'), path.join(root, '.skillsignore'));
+  await assert.rejects(readSkillsIgnore(root), /\.skillsignore must be a regular file/);
+});
+
+test('managed skills are the source, project, and baseline skills minus ignored ones', () => {
+  const result = resolveSkills({ source: ['alpha', 'beta', 'draft-x'], project: ['alpha', 'local'], baseline: ['gone'], ignore: ['draft-*'], direction: 'bidirectional' });
+  assert.deepEqual(result, { skills: ['alpha', 'beta', 'gone', 'local'], skipped: [], invalid: [] });
+});
+
+test('direction skips one-sided skills that were never synced, and invalid names are reported', () => {
+  const pull = resolveSkills({ source: ['alpha'], project: ['alpha', 'local', 'synced'], baseline: ['synced'], ignore: [], direction: 'pull' });
+  assert.deepEqual(pull, { skills: ['alpha', 'synced'], skipped: [{ skill: 'local', side: 'project' }], invalid: [] });
+  const push = resolveSkills({ source: ['alpha', 'remote'], project: ['alpha'], baseline: [], ignore: [], direction: 'push' });
+  assert.deepEqual(push.skipped, [{ skill: 'remote', side: 'source' }]);
+  assert.deepEqual(resolveSkills({ source: ['ok', 'bad:name'], project: [], baseline: [], ignore: [], direction: 'bidirectional' }).invalid, ['bad:name']);
 });

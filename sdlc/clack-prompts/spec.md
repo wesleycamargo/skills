@@ -72,6 +72,8 @@ The `skills` CLI bundles `@clack/prompts` and `picocolors` into its published ou
 
   Each prompt MUST offer the saved value as its default when reconfiguring. Otherwise it MUST offer the current default: `main`, `skills`, `.agents/skills`, or `skills-sync/update`. The repository has no default. A default MUST appear as a placeholder: pressing Enter accepts it, and typing replaces it. It MUST NOT be inserted as editable text that typed input appends to. (Corrected 2026-09-24: in `0.2.0` and `0.3.0`, typing `skills` at the branch prompt produced `mainskills`.) Each prompt MUST reject an empty answer inline and ask again. The repository prompt MUST also reject a value that is only whitespace. The source branch, source path, project path, and publication branch MUST each be checked inline with the same rule that `validateConfig` applies to that field. An invalid answer MUST show the validation message and ask again instead of exiting.
 - **FR-7:** While the source is checked out and skills are discovered, a spinner MUST show `Loading skills…`. When it finishes, it MUST stop with a message that gives the number of skills found. If the checkout fails or finds no skills, the spinner MUST stop with an error indicator, and the wizard MUST fail with the existing error message and exit status `1`. It MUST NOT offer a retry.
+> **Superseded 2026-09-24:** the FR-8 skill prompt was removed; see `sdlc/skillsignore/spec.md`.
+
 - **FR-8:** Skill selection MUST use the copied searchable multi-select with:
   - the message `Select skills to sync`;
   - one item for each discovered skill, with the skill name as the label and value;
