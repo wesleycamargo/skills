@@ -15,23 +15,42 @@ The CLI stores no credentials. Git and `gh` use your existing local authenticati
 
 ## Install
 
-CI publishes each new version to the GitHub Packages npm registry (`npm.pkg.github.com`), not npmjs.org. The package is public, but GitHub Packages still requires a token to install it: a classic personal access token with the `read:packages` scope.
+The package is published publicly to npmjs as `@wesleycamargo/skills-sync`. It remains under validation and is not yet ready for important repositories.
+
+From a project's root directory:
+
+```sh
+npm install --save-dev @wesleycamargo/skills-sync
+npx --no-install skills-sync init
+```
+
+For a one-off command without adding the package to the project:
+
+```sh
+npx --package=@wesleycamargo/skills-sync skills-sync init
+```
+
+Do not run unscoped `npx skills-sync` before installing the package: npmjs resolves package names, not executable names.
+
+### GitHub Packages installation
+
+GitHub Packages remains available for existing consumers at `npm.pkg.github.com`. It requires a classic personal access token with the `read:packages` scope and an `@wesleycamargo` registry mapping.
 
 From your project's root directory, run the setup script from a copy of this repository:
 
 ```sh
-/path/to/skills/scripts/setup-skills-sync.sh
+/path/to/skills-sync/scripts/setup-skills-sync.sh
 ```
 
-It checks for Node.js 22.20.0 or later, uses an existing npm login or `NODE_AUTH_TOKEN` if one works and otherwise asks for a token, saves the token in your user npm config (never in the project), adds the `@wesleycamargo` registry line to the project's `.npmrc`, installs the package as a dev dependency, and starts the setup wizard. Use `--global` to install globally, `--version <version>` to pick a version, and `--no-init` to skip the wizard.
+It installs from npmjs without changing `.npmrc` or asking for a token. Use `--global` to install globally, `--version <version>` to pick a version, and `--no-init` to skip the wizard.
 
-To set it up by hand instead, log in once, point the scope at GitHub Packages, and install:
+To install from GitHub Packages by hand instead, log in once, point the scope at GitHub Packages, and install:
 
 ```sh
 npm login --scope=@wesleycamargo --auth-type=legacy --registry=https://npm.pkg.github.com
 echo "@wesleycamargo:registry=https://npm.pkg.github.com" >> .npmrc
 npm install --save-dev @wesleycamargo/skills-sync
-npx skills-sync init
+npx --no-install skills-sync init
 ```
 
 ### Install from a built package
@@ -45,8 +64,8 @@ npm run build
 npm pack
 
 cd /path/to/project
-npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.1.tgz
-npx skills-sync init
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.2.tgz
+npx --no-install skills-sync init
 ```
 
 The interactive wizard asks for the source repository and branch, source and project skill directories, selected skills, direction, optional agent targets, and publication mode. It shows the resulting configuration before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices.

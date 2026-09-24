@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# Installs @wesleycamargo/skills-sync from the GitHub Packages npm registry.
+# Installs @wesleycamargo/skills-sync from npmjs.
 set -euo pipefail
 
 PACKAGE="@wesleycamargo/skills-sync"
-SCOPE="@wesleycamargo"
-REGISTRY="https://npm.pkg.github.com"
-AUTH_PREFIX="//npm.pkg.github.com/:_authToken="
+REGISTRY="https://registry.npmjs.org"
 MIN_NODE="22.20.0"
-TOKEN_URL="https://github.com/settings/tokens/new?scopes=read:packages&description=skills-sync"
-USER_NPMRC="${NPM_CONFIG_USERCONFIG:-${npm_config_userconfig:-$HOME/.npmrc}}"
 
 global=false
 version="latest"
@@ -18,7 +14,7 @@ usage() {
   cat <<EOF
 Usage: setup-skills-sync.sh [--global] [--version <version>] [--no-init]
 
-Configures npm for GitHub Packages and installs $PACKAGE.
+Installs $PACKAGE from npmjs without changing npm registry configuration.
 Run it from your project's root directory.
 
   --global            Install globally instead of as a project dev dependency.
@@ -26,10 +22,7 @@ Run it from your project's root directory.
   --no-init           Do not start the skills-sync setup wizard afterwards.
   -h, --help          Show this help.
 
-GitHub Packages requires a token even for public packages. The script uses
-an existing npm login if one works, then NODE_AUTH_TOKEN if set, and
-otherwise asks for a classic personal access token with the read:packages
-scope. The token is saved in your user npm config, never in the project.
+No npm token is required to install this public package.
 EOF
 }
 
@@ -68,61 +61,13 @@ if [[ $global == false && ! -f package.json ]]; then
   die "No package.json in $(pwd). Run this from your project root, create one with 'npm init -y', or use --global."
 fi
 
-can_read_package() {
-  npm view "$PACKAGE" version --registry="$REGISTRY" >/dev/null 2>&1
-}
-
-# Writes the token to the user npm config without passing it on a command line.
-save_token() {
-  local tmp
-  touch "$USER_NPMRC"
-  chmod 600 "$USER_NPMRC"
-  tmp="$(mktemp)"
-  awk -v prefix="$AUTH_PREFIX" 'index($0, prefix) != 1' "$USER_NPMRC" >"$tmp"
-  printf '%s%s\n' "$AUTH_PREFIX" "$1" >>"$tmp"
-  cat "$tmp" >"$USER_NPMRC"
-  rm -f "$tmp"
-}
-
-if can_read_package; then
-  echo "npm can already read $PACKAGE from GitHub Packages."
-else
-  token="${NODE_AUTH_TOKEN:-}"
-  if [[ -z $token ]]; then
-    [[ -t 0 ]] || die "Not logged in to $REGISTRY. Set NODE_AUTH_TOKEN to a classic token with read:packages and re-run."
-    echo "GitHub Packages needs a classic personal access token with the read:packages scope."
-    echo "Create one at: $TOKEN_URL"
-    read -rsp "Token: " token
-    echo
-  fi
-  [[ -n $token ]] || die "No token entered."
-  backup="$(mktemp)"
-  [[ -f $USER_NPMRC ]] && cat "$USER_NPMRC" >"$backup"
-  save_token "$token"
-  if ! can_read_package; then
-    cat "$backup" >"$USER_NPMRC"
-    rm -f "$backup"
-    die "GitHub rejected the token. Use a classic token (not fine-grained) with the read:packages scope."
-  fi
-  rm -f "$backup"
-  echo "Saved the token to your user npm config ($USER_NPMRC)."
-fi
-
 if [[ $global == true ]]; then
-  npm config set "$SCOPE:registry" "$REGISTRY" --location=user
-  npm install --global "$PACKAGE@$version"
+  npm install --global "$PACKAGE@$version" --registry="$REGISTRY"
   command -v skills-sync >/dev/null 2>&1 ||
     die "Installed, but 'skills-sync' is not on your PATH. Add $(npm prefix --global)/bin to PATH."
   cli=(skills-sync)
 else
-  # The scope mapping goes in the project so teammates and CI resolve the same registry.
-  tmp="$(mktemp)"
-  [[ -f .npmrc ]] && awk -v prefix="$SCOPE:registry=" 'index($0, prefix) != 1' .npmrc >"$tmp"
-  printf '%s:registry=%s\n' "$SCOPE" "$REGISTRY" >>"$tmp"
-  cat "$tmp" >.npmrc
-  rm -f "$tmp"
-  echo "Pointed $SCOPE packages at GitHub Packages in ./.npmrc (safe to commit; it holds no token)."
-  npm install --save-dev "$PACKAGE@$version"
+  npm install --save-dev "$PACKAGE@$version" --registry="$REGISTRY"
   [[ -e node_modules/.bin/skills-sync ]] ||
     die "Installed, but the package did not provide the 'skills-sync' command. Try a newer version with --version."
   cli=(npx --no-install skills-sync)
@@ -131,8 +76,8 @@ fi
 echo "Installed $PACKAGE."
 
 if [[ $run_init == true && -t 0 ]]; then
-  echo "Starting the setup wizard (${cli[*]} init)..."
+  echo "Starting the setup wizard."
   "${cli[@]}" init
 else
-  echo "Next: run '${cli[*]} init' to configure which skills to sync."
+  echo "Run the displayed CLI command with init to configure which skills to sync."
 fi
