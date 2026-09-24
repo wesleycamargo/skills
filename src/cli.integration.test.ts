@@ -102,7 +102,7 @@ test('updates a pending publication branch without duplicate commits and clears 
   assert.match(await git(['--git-dir', bare, 'show', 'skills-sync/test:skills/example/SKILL.md'], tempPath(seed)), /post-merge edit/);
 });
 
-test('opens one pull request, updates its branch, then settles after merge', async t => {
+test('opens one pull request, updates its branch, then settles after merge', { skip: process.platform === 'win32' ? 'mock GitHub transport uses POSIX shell wrappers' : false }, async t => {
   const { bare, seed, project, temp } = await fixture(t);
   const configPath = path.join(project, '.agents/skills-sync.json');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
