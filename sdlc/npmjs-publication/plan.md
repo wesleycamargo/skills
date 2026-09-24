@@ -4,7 +4,7 @@
 
 Keep `@wesleycamargo/skills-sync` as the public package identity and add npmjs as a second distribution target. Make publication explicit per registry so GitHub Packages remains supported and each registry can independently determine whether its version already exists. Treat npm account authorization and release trust configuration as operational prerequisites, never repository configuration or source-controlled credentials.
 
-Update consumer documentation to make npmjs the simple default installation path while retaining accurate GitHub Packages guidance for existing consumers. Validate the same packed artifact that would be released, then publish version `0.1.4` as an under-validation evaluation release. A stable or general-availability release remains gated on review of the existing v1 release-validation work.
+Update consumer documentation to make npmjs the simple default installation path while retaining accurate GitHub Packages guidance for existing consumers. Validate the same packed artifact that would be released, then publish version `0.1.5` as an under-validation evaluation release. A stable or general-availability release remains gated on review of the existing v1 release-validation work.
 
 ## Affected Components
 
@@ -22,7 +22,7 @@ Status: completed
 
 - [x] Confirm that the release owner controls the `@wesleycamargo` npm scope and can publish public packages.
 - [x] Use the operator's existing npm login for the first manual evaluation release; the workflow is prepared for npm trusted publishing and must not store a credential in the repository.
-- [x] Confirm version `0.1.4` as an under-validation evaluation release, not a stable or general-availability release.
+- [x] Confirm version `0.1.5` as an under-validation evaluation release, not a stable or general-availability release.
 - [x] Confirm that `@wesleycamargo/skills-sync` remains the consumer-facing npmjs identity and that GitHub Packages remains a supported distribution target.
 
 Validation:
@@ -70,7 +70,7 @@ Validation:
 Status: in_progress
 Depends on: Tasks 1, 2, and 4
 
-- The first publication is the authorized under-validation evaluation release `0.1.4`; a stable/general-availability release still depends on completed review of `sdlc/skills-sync-release-validation`.
+- The first publication is the authorized under-validation evaluation release `0.1.5`; a stable/general-availability release still depends on completed review of `sdlc/skills-sync-release-validation`.
 
 - [ ] Run final local package checks with the supported Node.js version: `npm ci`, `npm test`, `npm run build`, and `npm pack --dry-run`.
 - [ ] Publish the approved new version to npmjs through the configured release path; do not use an ad hoc token-bearing command line.
@@ -106,6 +106,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — release automation is complete; `0.1.4` remains unavailable because npm reports it as previously staged but exposes no stage ID.
-Next: Resolve npm's hidden-stage record before selecting a new release version. Use `scripts/publish-npm.sh` for the local OTP bootstrap or the configured trusted-publishing workflow; it will not retry uncertain versions.
-Blockers: npm returned HTTP 409 for a previously staged `0.1.4`, while `npm stage list` returned no stage ID. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved evaluation release.
+Current: Task 5 — release automation is complete; `0.1.5` is the next unreserved evaluation candidate.
+Next: Push `0.1.5` and dispatch the npm-only workflow through configured trusted publishing. Use `scripts/publish-npm.sh` for local OTP bootstrap only; it will not retry uncertain versions.
+Blockers: Versions `0.1.2` through `0.1.4` remain unavailable after interrupted npm flows. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved evaluation release.

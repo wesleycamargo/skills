@@ -75,7 +75,7 @@ This specification preserves the existing scoped package identity. Consumers inv
 - **Assumption:** npmjs publication is public and is in addition to, rather than a replacement for, GitHub Packages availability.
 - **Decision:** GitHub Actions publishes directly through npm trusted publishing with provenance; it uses no npm token. Configure the npm trusted publisher outside the repository for this workflow before enabling that path.
 - **Decision:** A local bootstrap release requires `NPM_OTP` from an interactive maintainer. The OTP is passed to npm through its process environment, never a command-line argument or repository file.
-- **Decision:** Version `0.1.4` is an under-validation evaluation release. Versions `0.1.2` and `0.1.3` were reserved by npm without becoming installable after interrupted approval flows, so neither can be reused. npmjs documentation MUST retain the validation warning. A stable or general-availability release remains gated on completion and review of `skills-sync-release-validation`.
+- **Decision:** Version `0.1.5` is an under-validation evaluation release. Versions `0.1.2` through `0.1.4` were reserved by npm without becoming installable after interrupted approval flows, so they cannot be reused. npmjs documentation MUST retain the validation warning. A stable or general-availability release remains gated on completion and review of `skills-sync-release-validation`.
 
 ## Handoff
 
