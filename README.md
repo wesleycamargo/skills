@@ -16,4 +16,4 @@ The wizard saves `.agents/skills-sync.json`. `status` and `diff` show file state
 
 The current implementation refuses conflicting edits and deletion proposals by default. An individual deletion may be selected with `--delete=skill/file`. `override-main` additionally requires `--yes --override-main --override-target=<source repository>@<branch>` on each run. It uses a normal Git commit and never force-pushes.
 
-**Work still required before v1 release:** reliable three-way merges within one file; safe adoption of existing skills; supported agent installation through the upstream `skills` CLI; pending PR and branch state handling; comprehensive integration tests; and full documentation. Do not use this branch to synchronize important repositories yet.
+**Work still required before v1 release:** safe adoption of existing skills; supported agent installation through the upstream `skills` CLI; pending PR and branch state handling; comprehensive integration tests; and full documentation. The current three-way merge handles compatible UTF-8 text and refuses binary or overlapping edits. Do not use this branch to synchronize important repositories yet.
