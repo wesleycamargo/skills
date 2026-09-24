@@ -74,7 +74,7 @@ This specification preserves the existing scoped package identity. Consumers inv
 - **Assumption:** The package will retain the scoped identity `@wesleycamargo/skills-sync`; this preserves the current namespace and avoids claiming an unrelated unscoped name.
 - **Assumption:** npmjs publication is public and is in addition to, rather than a replacement for, GitHub Packages availability.
 - **Open question:** Which npm account or organization owns `@wesleycamargo`, and will releases use npm trusted publishing or a managed automation token? This determines release-environment setup but not the consumer contract.
-- **Decision:** Version `0.1.2` is an under-validation evaluation release. Its npmjs documentation MUST retain the validation warning. A stable or general-availability release remains gated on completion and review of `skills-sync-release-validation`.
+- **Decision:** Version `0.1.3` is an under-validation evaluation release. Version `0.1.2` was reserved by npm without becoming installable after an interrupted approval flow, so it cannot be reused. npmjs documentation MUST retain the validation warning. A stable or general-availability release remains gated on completion and review of `skills-sync-release-validation`.
 
 ## Handoff
 

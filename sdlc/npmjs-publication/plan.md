@@ -4,7 +4,7 @@
 
 Keep `@wesleycamargo/skills-sync` as the public package identity and add npmjs as a second distribution target. Make publication explicit per registry so GitHub Packages remains supported and each registry can independently determine whether its version already exists. Treat npm account authorization and release trust configuration as operational prerequisites, never repository configuration or source-controlled credentials.
 
-Update consumer documentation to make npmjs the simple default installation path while retaining accurate GitHub Packages guidance for existing consumers. Validate the same packed artifact that would be released, then publish version `0.1.2` as an under-validation evaluation release. A stable or general-availability release remains gated on review of the existing v1 release-validation work.
+Update consumer documentation to make npmjs the simple default installation path while retaining accurate GitHub Packages guidance for existing consumers. Validate the same packed artifact that would be released, then publish version `0.1.3` as an under-validation evaluation release. A stable or general-availability release remains gated on review of the existing v1 release-validation work.
 
 ## Affected Components
 
@@ -22,7 +22,7 @@ Status: completed
 
 - [x] Confirm that the release owner controls the `@wesleycamargo` npm scope and can publish public packages.
 - [x] Use the operator's existing npm login for the first manual evaluation release; the workflow is prepared for npm trusted publishing and must not store a credential in the repository.
-- [x] Confirm version `0.1.2` as an under-validation evaluation release, not a stable or general-availability release.
+- [x] Confirm version `0.1.3` as an under-validation evaluation release, not a stable or general-availability release.
 - [x] Confirm that `@wesleycamargo/skills-sync` remains the consumer-facing npmjs identity and that GitHub Packages remains a supported distribution target.
 
 Validation:
@@ -70,7 +70,7 @@ Validation:
 Status: in_progress
 Depends on: Tasks 1, 2, and 4
 
-- The first publication is the authorized under-validation evaluation release `0.1.2`; a stable/general-availability release still depends on completed review of `sdlc/skills-sync-release-validation`.
+- The first publication is the authorized under-validation evaluation release `0.1.3`; a stable/general-availability release still depends on completed review of `sdlc/skills-sync-release-validation`.
 
 - [ ] Run final local package checks with the supported Node.js version: `npm ci`, `npm test`, `npm run build`, and `npm pack --dry-run`.
 - [ ] Publish the approved new version to npmjs through the configured release path; do not use an ad hoc token-bearing command line.
@@ -79,7 +79,7 @@ Depends on: Tasks 1, 2, and 4
 - [ ] Run the release path a second time or its equivalent version check to prove that the existing npmjs version is skipped rather than republished.
 
 Validation:
-- `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs rejected the direct publication before creating `0.1.2` because the current login did not satisfy the account's 2FA publishing requirement; a follow-up `npm view` confirmed the version remains absent. `npm pkg fix` normalized the repository field and its follow-up commit `3499c44` was pushed. A clean consumer installation and existing-version skip check remain pending successful publication.
+- `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs initially rejected direct publication because the current login did not satisfy its 2FA policy. After browser approval, npm reserved `0.1.2` but its read endpoint and clean installation returned 404; package access reports the package as public with read-write access. npm therefore will not permit reuse of `0.1.2`, so this task continues with `0.1.3`. `npm pkg fix` normalized the repository field and follow-up commit `3499c44` was pushed. A clean consumer installation and existing-version skip check remain pending successful `0.1.3` publication.
 
 ### Task 6 — Record outcomes and hand off for independent validation
 Status: pending
@@ -106,6 +106,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — the npmjs evaluation release is built, committed, and ready, but unpublished.
-Next: Enable npm publishing 2FA, refresh the local npm login, then rerun the version check, publication, and clean consumer install.
-Blockers: npm rejected the current local login with HTTP 403 because it lacks a 2FA-approved publishing credential. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.2` evaluation release.
+Current: Task 5 — version `0.1.2` is reserved but not installable; preparing `0.1.3` for publication.
+Next: Run final checks, commit and push `0.1.3`, publish it through the approved npm 2FA flow, then run a clean consumer install.
+Blockers: The npm 2FA approval flow left `0.1.2` non-reusable. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.3` evaluation release.
