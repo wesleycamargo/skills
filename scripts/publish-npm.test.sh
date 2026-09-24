@@ -62,7 +62,7 @@ run_script() {
   local fixture="$1"
   shift
   set +e
-  env -u GITHUB_ACTIONS -u NPM_OTP PATH="$fixture/bin:$PATH" MOCK_LOG="$fixture/log" MOCK_PUBLISHED_MARKER="$fixture/published" "$@" bash "$fixture/scripts/publish-npm.sh" >"$fixture/output" 2>&1
+  env -u GITHUB_ACTIONS -u NPM_OTP -u RELEASE_CHANNEL PATH="$fixture/bin:$PATH" MOCK_LOG="$fixture/log" MOCK_PUBLISHED_MARKER="$fixture/published" "$@" bash "$fixture/scripts/publish-npm.sh" >"$fixture/output" 2>&1
   local status=$?
   set -e
   return "$status"
