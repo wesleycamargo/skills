@@ -22,19 +22,28 @@ export function safePath(value: unknown, label: string): string {
   return value;
 }
 
+/** Field checks shared by validateConfig and the setup wizard; each returns an error message or undefined. */
+export const fieldError = {
+  repository: (value: unknown) => typeof value !== 'string' || !value.trim() ? 'Missing source.repository' : undefined,
+  branch: (value: unknown) => typeof value !== 'string' || !/^[\w][\w.\/-]*$/.test(value) || value.includes('..') ? 'Invalid source.branch' : undefined,
+  path: (value: unknown, label: string) => { try { safePath(value, label); return undefined; } catch (error) { return (error as Error).message; } },
+  publicationBranch: (value: unknown, sourceBranch: string) => !value || value === sourceBranch ? 'Publication needs a non-source branch' : undefined,
+};
+
 export function validateConfig(input: unknown): Config {
   if (!input || typeof input !== 'object') throw new Error('Configuration must be an object');
   const c = input as Record<string, any>;
   if (c.version !== 1) throw new Error('Unsupported configuration version; expected version 1');
-  if (!c.source || typeof c.source.repository !== 'string' || !c.source.repository.trim()) throw new Error('Missing source.repository');
-  if (typeof c.source.branch !== 'string' || !/^[\w][\w.\/-]*$/.test(c.source.branch) || c.source.branch.includes('..')) throw new Error('Invalid source.branch');
+  if (!c.source) throw new Error('Missing source.repository');
+  for (const error of [fieldError.repository(c.source.repository), fieldError.branch(c.source.branch)]) if (error) throw new Error(error);
   safePath(c.source.path, 'source.path');
   safePath(c.target?.path, 'target.path');
   if (!Array.isArray(c.selection) || !c.selection.every((s: unknown) => typeof s === 'string' && s.trim() !== '' && s !== '.' && s !== '..' && !/[\\/\0-\x1f\x7f*?\[\]:]/.test(s)) || new Set(c.selection).size !== c.selection.length) throw new Error('selection must contain unique skill directory names');
   if (!['bidirectional', 'pull', 'push'].includes(c.direction)) throw new Error('Invalid direction');
   if (!Array.isArray(c.agents) || !c.agents.every((s: unknown) => typeof s === 'string')) throw new Error('Invalid agents');
   if (!['local-commit', 'branch', 'pull-request', 'main', 'override-main'].includes(c.publication?.mode)) throw new Error('Invalid publication mode');
-  if (['branch', 'pull-request'].includes(c.publication.mode) && (!c.publication.branch || c.publication.branch === c.source.branch)) throw new Error('Publication needs a non-source branch');
+  const publicationError = ['branch', 'pull-request'].includes(c.publication.mode) && fieldError.publicationBranch(c.publication.branch, c.source.branch);
+  if (publicationError) throw new Error(publicationError);
   return c as Config;
 }
 

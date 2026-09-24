@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
+import { stdin } from 'node:process';
+import { rmSync } from 'node:fs';
 import { mkdir, writeFile, readdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { checkout, head, run } from './git.js';
-import { Config, configPath, loadConfig, validateConfig } from './config.js';
-import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, sameFiles, saveState, State, tryMerge } from './sync.js';
+import { Config, configPath, loadConfig } from './config.js';
+import { CANCEL, clackPrompts } from './prompts.js';
+import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, readSkillDescription, sameFiles, saveState, State, tryMerge } from './sync.js';
+import { runWizard, SkillInfo } from './wizard.js';
 
 const root = process.cwd();
 const cmd = process.argv[2] || (stdin.isTTY ? 'init' : 'status');
@@ -16,12 +18,7 @@ const confirmed = flags.has('--yes');
 const publish = flags.has('--publish');
 const require = createRequire(import.meta.url);
 
-async function prompt(question: string, defaultValue = ''): Promise<string> {
-  if (!stdin.isTTY) throw new Error(`Interactive input required: ${question}`);
-  const rl = createInterface({ input: stdin, output: stdout });
-  try { return (await rl.question(`${question}${defaultValue ? ` [${defaultValue}]` : ''}: `)).trim() || defaultValue; }
-  finally { rl.close(); }
-}
+let cancelled = false;
 
 async function locateAgentSkillDirs(dir: string, prefix = ''): Promise<string[]> {
   const found: string[] = [];
@@ -64,35 +61,30 @@ async function installAgents(config: Config, sourceRoot: string): Promise<void> 
   } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
+async function discoverSkills(repository: string, branch: string, sourcePath: string): Promise<SkillInfo[]> {
+  const checkoutInfo = await checkout(repository, branch);
+  // clack exits the process directly on Ctrl+C while its spinner runs; do not leave the checkout behind.
+  const removeOnExit = () => rmSync(checkoutInfo.dir, { recursive: true, force: true });
+  process.once('exit', removeOnExit);
+  try {
+    const names = await discover(checkoutInfo.dir, sourcePath);
+    return await Promise.all(names.map(async name => ({ name, description: await readSkillDescription(checkoutInfo.dir, sourcePath, name) })));
+  } finally { process.removeListener('exit', removeOnExit); await checkoutInfo.cleanup(); }
+}
+
 async function init(): Promise<void> {
+  if (!stdin.isTTY) throw new Error('Setup needs an interactive terminal. For noninteractive runs, commit a valid .agents/skills-sync.json.');
   let old: Config | undefined;
   try { old = await loadConfig(root); }
   catch (error) { if (!(error as Error).message.startsWith('No .agents/skills-sync.json')) throw error; }
-  const repository = await prompt('Skills Git URL or local checkout', old?.source.repository);
-  const branch = await prompt('Source branch', old?.source.branch || 'main');
-  const sourcePath = await prompt('Source skills directory', old?.source.path || 'skills');
-  const targetPath = await prompt('Project skills directory', old?.target.path || '.agents/skills');
-  const checkoutInfo = await checkout(repository, branch);
-  let available: string[];
-  try { available = await discover(checkoutInfo.dir, sourcePath); }
-  finally { await checkoutInfo.cleanup(); }
-  if (!available.length) throw new Error(`No skills with SKILL.md found in ${sourcePath}`);
-  console.log(`Available: ${available.join(', ')}`);
-  const selected = await prompt('Skills (comma separated, * for all)', old?.selection.join(',') || '*');
-  const selection = selected === '*' ? available : selected.split(',').map(s => s.trim()).filter(Boolean);
-  if (selection.some(s => !available.includes(s))) throw new Error('Selection contains a skill absent from source');
-  const direction = await prompt('Direction (bidirectional/pull/push)', old?.direction || 'bidirectional');
-  const agents = (await prompt('Agents (comma separated, blank to skip)', old?.agents.join(',') || '')).split(',').map(s => s.trim()).filter(Boolean);
-  if (agents.length && targetPath !== '.agents/skills') throw new Error('Agent installation currently requires .agents/skills as the project skills directory.');
-  const mode = await prompt('Publish mode (local-commit/branch/pull-request/main/override-main)', old?.publication.mode || 'local-commit');
-  const publicationBranch = ['branch', 'pull-request'].includes(mode) ? await prompt('Publication branch', old?.publication.branch || 'skills-sync/update') : undefined;
-  const config = validateConfig({ version: 1, source: { repository, branch, path: sourcePath }, target: { path: targetPath }, selection, direction, agents, publication: { mode, branch: publicationBranch } });
-  console.log(JSON.stringify(config, null, 2));
-  if ((await prompt('Save this configuration? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
+  clackPrompts.intro('skills-sync');
+  const result = await runWizard(clackPrompts, { old, discoverSkills });
+  if ('cancelled' in result) { clackPrompts.cancel('Setup cancelled'); return; }
   await mkdir(path.dirname(configPath(root)), { recursive: true });
-  await writeFile(configPath(root), JSON.stringify(config, null, 2) + '\n');
-  console.log(`Saved ${configPath(root)}. Initial sync will preview selected skill changes.`);
+  await writeFile(configPath(root), JSON.stringify(result.config, null, 2) + '\n');
+  clackPrompts.log.info(`Saved ${configPath(root)}. Initial sync will preview selected skill changes.`);
   await execute();
+  if (!cancelled) clackPrompts.outro('Setup complete');
 }
 
 function summary(changes: Change[]): void {
@@ -286,7 +278,11 @@ async function execute(): Promise<void> {
     const writesSource = applicable.some(c => c.kind === 'push' || c.kind === 'merge' || replacements.includes(c) || (deletions.includes(c) && c.local === undefined));
     if (writesSource && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
     if (config.publication.mode === 'override-main' && writesSource && !override) throw new Error(`Override requires --yes --override-main --override-target=${config.source.repository}@${config.source.branch}`);
-    if (!confirmed && (await prompt('Apply the listed changes? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
+    if (!confirmed) {
+      if (!stdin.isTTY) throw new Error('Changes were not applied. Rerun with --yes to confirm a noninteractive run.');
+      const apply = await clackPrompts.confirm({ message: 'Apply the listed changes?', initialValue: false });
+      if (apply === CANCEL || !apply) { clackPrompts.cancel('Sync cancelled'); cancelled = true; return; }
+    }
     if (!source.localCommit) await ensureFresh(source.dir, original, config.source.branch);
     for (const change of applicable) {
       const localWrite = change.kind === 'pull' || change.kind === 'merge' || (deletions.includes(change) && change.source === undefined);

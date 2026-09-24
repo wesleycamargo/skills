@@ -64,13 +64,20 @@ npm run build
 npm pack
 
 cd /path/to/project
-npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.5.tgz
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.2.0.tgz
 npx --no-install skills-sync init
 ```
 
-The interactive wizard asks for the source repository and branch, source and project skill directories, selected skills, direction, optional agent targets, and publication mode. It shows the resulting configuration before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices.
+The interactive wizard uses the same prompts as `npx skills add`. It asks for:
 
-For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. A missing or invalid configuration fails with a concise next action instead of prompting.
+- the source repository, source branch, and source and project skill directories, as text inputs that are checked as you type;
+- the skills to sync, in a searchable list: type to filter, use Space to select, and use **Select All** to choose every skill;
+- the direction and publication mode, from lists that explain each option;
+- the agents to install to, when the project skills directory is `.agents/skills`. Agents that read `.agents/skills` directly are always included and are not saved.
+
+The wizard shows a configuration summary and asks before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices. Press Escape or Ctrl+C at any prompt to cancel: nothing is written, and the command exits with status `0`.
+
+Setup needs an interactive terminal. For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. `init` without a terminal, or a missing or invalid configuration, fails with a concise next action instead of prompting.
 
 ## Publishing
 

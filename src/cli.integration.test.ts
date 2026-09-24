@@ -281,3 +281,23 @@ test('installs agent copies through the upstream skills CLI', async t => {
   assert.match(rerun.stderr, /has local edits/);
   assert.equal(await readFile(agentSkill, 'utf8'), '# Local agent-specific edit\n');
 });
+
+test('setup without a terminal fails without prompting or writing', async t => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-it-'));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  for (const command of ['init', 'configure']) {
+    const result = invoke(command, temp);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Setup needs an interactive terminal\. For noninteractive runs, commit a valid \.agents\/skills-sync\.json\./);
+  }
+  await assert.rejects(readFile(path.join(temp, '.agents/skills-sync.json')));
+});
+
+test('apply without a terminal or --yes fails without writing', async t => {
+  const { project } = await fixture(t);
+  const result = invoke('sync', project);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Changes were not applied\. Rerun with --yes to confirm a noninteractive run\./);
+  await assert.rejects(readFile(path.join(project, '.agents/skills/example/SKILL.md')));
+  await assert.rejects(readFile(path.join(project, '.agents/skills-sync-state.json')));
+});

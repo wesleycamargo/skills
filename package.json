@@ -1,6 +1,6 @@
 {
   "name": "@wesleycamargo/skills-sync",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -11,18 +11,22 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "engines": {
     "node": ">=22.20.0"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json --noEmit && obuild",
     "test:publish-npm": "bash scripts/publish-npm.test.sh",
     "test": "npm run test:publish-npm && npm run build && node -e \"require('node:fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test dist-test/*.test.js"
   },
   "devDependencies": {
+    "@clack/prompts": "1.7.0",
     "@types/node": "^22.0.0",
+    "obuild": "0.4.40",
+    "picocolors": "1.1.1",
     "typescript": "^5.9.0"
   },
   "dependencies": {
