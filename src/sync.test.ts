@@ -39,7 +39,7 @@ test('refuses to write through a symlink in the target path', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-path-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, 'outside'), { recursive: true });
-  await symlink(path.join(root, 'outside'), path.join(root, 'linked'), 'dir');
+  await symlink(path.join(root, 'outside'), path.join(root, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
   const change = { skill: 'example', file: 'SKILL.md', source: Buffer.from('content').toString('base64'), kind: 'pull' as const };
   await assert.rejects(() => applyFile(root, 'linked', change, 'local', false), /symlink/i);
   assert.deepEqual(await import('node:fs/promises').then(fs => fs.readdir(path.join(root, 'outside'))), []);
