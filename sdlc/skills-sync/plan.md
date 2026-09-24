@@ -18,7 +18,7 @@ The v1 implementation provides local CLI behavior and noninteractive commands. T
 ## Implementation tasks
 
 ### Task 1 — Scaffold and configuration contract
-Status: pending
+Status: completed
 
 - [ ] Add a TypeScript npm CLI with a pinned supported Node.js version range and executable `skills-sync`.
 - [ ] Define and validate versioned configuration and state schemas, safe relative paths, source identity, selection, direction, agents, and publication mode.
@@ -27,7 +27,7 @@ Status: pending
 Validation: Package builds; config round-trips, unsupported versions, unsafe paths, and missing settings produce clear results.
 
 ### Task 2 — Discovery and wizard
-Status: pending
+Status: in_progress
 Depends on: Task 1
 
 - [ ] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
@@ -91,6 +91,6 @@ Run the package build and focused unit/integration tests. Exercise wizard setup,
 
 ## Handover
 
-Current: Not started.
-Next: Task 1 — Scaffold and configuration contract.
-Blockers: None. Plan is ready for review before execution.
+Current: Draft implementation in pull request #1. Package, schema, wizard, baseline planner, safe conflict refusal, compatible text merge, and initial publication paths are present. Unit tests and an isolated Git round trip pass.
+Next: Complete Task 2 agent installation, then finish pending branch/PR behavior and broad integration checks in Tasks 3–6.
+Blockers: None. Do not merge the draft until the remaining acceptance criteria are verified.
