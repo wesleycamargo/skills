@@ -10,9 +10,12 @@ The repository has no Git tags, and there is no agreed signal for how large each
 
 Each publish computes the next version with semantic versioning, based on the last release, and publishes that version. No manual version edit is needed. The bump size comes from labels on the pull request that brought the change:
 
-- by default, a release is a **minor** bump;
 - a pull request labeled `major` gives a major bump;
-- a pull request labeled `patch` gives a patch bump.
+- a pull request labeled `minor` gives a minor bump;
+- a pull request labeled `patch` gives a patch bump;
+- with none of these labels, the release is a **minor** bump.
+
+When several of these labels apply, including labels from more than one pull request in the same release, the largest wins: `major` over `minor`, and `minor` over `patch`.
 
 Commit messages do not affect the bump size.
 
@@ -20,10 +23,10 @@ Commit messages do not affect the bump size.
 
 - Work out the next version from the last released version and the pull-request labels, following the rules above.
 - Find the pull request for the change being released. For a push to `main`, this is the merged pull request that contains the pushed commit. For a `feature/*` push, it is the open pull request for that branch. With no pull request (a direct push or a manual run), use the minor default.
-- Apply the computed version to the published package, and record the release in Git (for example with a version tag) so the next run knows where to start.
+- Record each release only as a Git tag, `v<version>`, on the released commit. The next run starts from the highest stable tag. No bot commit is made, so `package.json` in the repository is not updated.
+- Apply the computed version to `package.json` and `package-lock.json` inside the release run only, before the build and publish.
 - Handle the first run: there are no tags, so `0.2.0`, the current published version, must be the starting point.
-- Fail before publishing, with a clear message, when a pull request has both the `major` and the `patch` label.
-- Document the labels for contributors, and make sure the `major` and `patch` labels exist in the repository.
+- Document the labels and their order for contributors, and make sure the `major`, `minor`, and `patch` labels exist in the repository.
 - Keep the existing release safety: test and build gates, never republishing or overwriting a version, and never retrying an uncertain publication.
 - Update the release documentation and add tests for the version calculation.
 
@@ -38,8 +41,9 @@ Commit messages do not affect the bump size.
 ## Constraints
 
 - **Coordination:** this work changes the same release workflow as `npm-default-publication`, and it must build on that work. The version calculation must fit its model: feature-branch pushes publish prerelease versions under `beta`, while `main` and manual runs publish stable versions under `latest`. The prerelease version should be derived from the same next-version calculation. For example, `0.3.0-beta.N` for the default minor bump from `0.2.0`. Its specification (`sdlc/npm-default-publication/spec.md`, FR-3) requires a release to already carry a matching version form, such as `0.1.6-beta.0` for `beta`. This work would supply that version automatically, and FR-3's check would then validate it.
-- **Safety:** publication must never force-push. If the workflow records the version by committing back to a branch, it must use normal commits and respect branch protection. Recording the release without a bot commit (a tag only) is preferred if it keeps `package.json` meaningful.
-- **Credentials:** no npm credentials in the repository. Reading pull-request labels must use the workflow's own `GITHUB_TOKEN` with the minimum read permission (`pull-requests: read`). Any other extra permission, such as `contents: write` for tags, must also be the minimum needed.
+- **Safety:** publication must never force-push, move, or delete an existing tag. The workflow makes no commits to any branch.
+- **Repository version:** `version` in `package.json` no longer tells you what was released; the tags and npmjs do. The specification must say what the committed value is (for example, left at `0.2.0`) and make sure local builds and `npm pack` still work.
+- **Credentials:** no npm credentials in the repository. Reading pull-request labels must use the workflow's own `GITHUB_TOKEN` with the minimum read permission (`pull-requests: read`). Pushing tags needs `contents: write`. No other new permission may be added.
 - **Label timing:** a label added or changed after the publishing run has started does not change that run's version.
 - **Uncertain results:** a publication that npm accepted but has not yet made readable must not lead to a second bump and publish of the same change.
 - **Dependencies:** prefer Node.js built-ins or a small, pinned development tool over new runtime dependencies. The published package must not gain runtime dependencies.
@@ -47,17 +51,18 @@ Commit messages do not affect the bump size.
 
 ## Success Criteria
 
-- A release run publishes without any manual version edit, and the published version is exactly one bump above the previous release: minor by default, or major or patch according to the pull-request label.
-- Given example inputs, the version calculation produces the expected versions: no label, `major`, `patch`, both labels (fails), no pull request, the first-run baseline of `0.2.0`, repeated prereleases on one branch, and no changes since the last release.
+- A release run publishes without any manual version edit, and the published version is exactly one bump above the previous release: minor by default, or the largest labeled bump.
+- Given example inputs, the version calculation produces the expected versions: no label, each single label, combined labels (the largest wins), several pull requests in one release, no pull request, the first-run baseline of `0.2.0` with no tags, repeated prereleases on one branch, and no changes since the last release.
 - A run with no new commits since the last release does not publish a duplicate.
-- Each released version can be traced to its commit through Git.
+- Each stable version published to npmjs has a matching `v<version>` tag on the released commit.
 - The existing release safety checks still pass.
 
 ## Open Questions
 
-- Where is the released version recorded: in a bot commit that updates `package.json` and `package-lock.json`, or only in a Git tag, with the version applied at build time? A bot commit keeps the repository files accurate but needs write access to the branch. A tag only is simpler, but `package.json` then lags behind.
+- Are prereleases tagged too, or does the prerelease number `N` come from the `beta` versions already on npmjs? The specification decides; stable releases are always tagged.
+- If the tag push fails after npm has published, how does the next run avoid bumping again from the old tag? The specification must define this recovery, for example by also checking the latest version on npmjs.
 - **Assumption:** because the bump comes from labels, the automation is a small script using Node.js built-ins and the GitHub REST API. Tools such as `semantic-release` and `release-please` derive bumps from commit messages instead.
-- **Assumption:** the labels are named exactly `major` and `patch`.
+- **Decided 2026-09-24:** the release is recorded as a Git tag only. The labels are `major`, `minor`, and `patch`, with `major` over `minor` over `patch`. No label means a minor bump.
 
 ## Handoff
 
