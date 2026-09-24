@@ -2,7 +2,10 @@
   "name": "@wesleycamargo/skills-sync",
   "version": "0.1.2",
   "type": "module",
-  "repository": "github:wesleycamargo/skills",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wesleycamargo/skills.git"
+  },
   "bin": {
     "skills-sync": "dist/cli.js"
   },
