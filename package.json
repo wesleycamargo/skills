@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "npm run build && node -e \"require('node:fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test dist-test/*.test.js"
+    "test:publish-npm": "bash scripts/publish-npm.test.sh",
+    "test": "npm run test:publish-npm && npm run build && node -e \"require('node:fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test dist-test/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

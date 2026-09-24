@@ -87,17 +87,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check npmjs version
-        id: check
-        run: |
-          PKG_NAME=$(node -p "require('./package.json').name")
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if npm view "$PKG_NAME@$PKG_VERSION" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Publish to npmjs
-        if: steps.check.outputs.exists == 'false'
-        run: npm publish --access public --provenance --registry=https://registry.npmjs.org
+        run: bash scripts/publish-npm.sh

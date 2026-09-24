@@ -72,6 +72,16 @@ The interactive wizard asks for the source repository and branch, source and pro
 
 For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. A missing or invalid configuration fails with a concise next action instead of prompting.
 
+## Publishing
+
+The release script prevents automatic retries of uncertain npmjs versions:
+
+```sh
+NPM_OTP=<current-six-digit-code> bash scripts/publish-npm.sh
+```
+
+Use the local OTP path only to bootstrap the first public version. Later npmjs releases use the manual npm workflow dispatch with npm trusted publishing and provenance. Configure the npm trusted publisher for this repository and workflow before using that path. The script skips an existing public version and stops on staged, 2FA, conflict, or uncertain registry results; resolve those npm states before another attempt.
+
 ## Commands
 
 Run these from the configured project directory:

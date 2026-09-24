@@ -41,17 +41,17 @@ Validation:
 - Completed 2026-09-24: removed the single-registry `publishConfig`, retained the scoped name, executable, engine, and production-file allowlist, and bumped the release to `0.1.2`. `npm test` passed and `npm pack --dry-run --json` listed only `README.md`, `package.json`, and production `dist/` files.
 
 ### Task 3 — Implement registry-specific release automation
-Status: pending
+Status: completed
 Depends on: Tasks 1–2
 
-- [ ] Update the release workflow to authenticate and address GitHub Packages and npmjs independently, using the selected external credential/trust configuration.
-- [ ] Before each registry-specific publish, query that registry for the exact package version and skip only that registry when the version already exists.
-- [ ] Preserve test and build gates before either publication attempt.
-- [ ] Report registry-specific success, skip, or failure outcomes without printing credentials.
-- [ ] Retain least-privilege workflow permissions and avoid adding tokens to repository files, workflow output, caches, or artifacts.
+- [x] Add a shared npmjs publisher used by local operators and the workflow; it selects local OTP or GitHub Actions trusted-publishing mode without storing credentials.
+- [x] Check exact npmjs versions and visible staged versions before a publish; skip only a public version and refuse ambiguous/staged states.
+- [x] Retain the workflow test and build gates before invoking the script.
+- [x] Report safe skip and failure outcomes without emitting raw npm authentication output.
+- [x] Retain least-privilege workflow permissions; direct GitHub Actions publishing uses npm trusted publishing and provenance.
 
 Validation:
-- Workflow review confirms that publishing to npmjs cannot overwrite an existing version, GitHub Packages remains independently publishable, and a failure message identifies the affected registry.
+- Completed 2026-09-24: `scripts/publish-npm.sh` handles local `NPM_OTP` publication and GitHub Actions provenance publication, checks public/staged versions, and never retries conflicts or uncertain results. `scripts/publish-npm.test.sh` covers six mocked paths: existing version, missing OTP, local OTP, Actions provenance, staged version, and conflict. `npm test` passed all six publisher tests and the existing 20 tests.
 
 ### Task 4 — Update installation and transition documentation
 Status: completed
@@ -106,6 +106,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — `0.1.4` is validated in an isolated worktree, but npm reports it as previously staged and not yet publicly installable.
-Next: A maintainer must inspect npmjs's Staged Packages page for `@wesleycamargo/skills-sync`, approve or reject the `0.1.4` stage, then report the result before any further publish attempt.
-Blockers: npm returned HTTP 409 for a previously staged `0.1.4`, while `npm stage list` returned no stage ID. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.4` evaluation release.
+Current: Task 5 — release automation is complete; `0.1.4` remains unavailable because npm reports it as previously staged but exposes no stage ID.
+Next: Resolve npm's hidden-stage record before selecting a new release version. Use `scripts/publish-npm.sh` for the local OTP bootstrap or the configured trusted-publishing workflow; it will not retry uncertain versions.
+Blockers: npm returned HTTP 409 for a previously staged `0.1.4`, while `npm stage list` returned no stage ID. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved evaluation release.
