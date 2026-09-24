@@ -18,46 +18,46 @@ The v1 implementation provides local CLI behavior and noninteractive commands. T
 ## Implementation tasks
 
 ### Task 1 — Scaffold and configuration contract
-Status: pending
+Status: completed
 
-- [ ] Add a TypeScript npm CLI with a pinned supported Node.js version range and executable `skills-sync`.
-- [ ] Define and validate versioned configuration and state schemas, safe relative paths, source identity, selection, direction, agents, and publication mode.
-- [ ] Establish deterministic errors and noninteractive behavior without reading secrets from stored files.
+- [x] Add a TypeScript npm CLI with a pinned supported Node.js version range and executable `skills-sync`.
+- [x] Define and validate versioned configuration and state schemas, safe relative paths, source identity, selection, direction, agents, and publication mode.
+- [x] Establish deterministic errors and noninteractive behavior without reading secrets from stored files.
 
 Validation: Package builds; config round-trips, unsupported versions, unsafe paths, and missing settings produce clear results.
 
 ### Task 2 — Discovery and wizard
-Status: pending
+Status: completed
 Depends on: Task 1
 
-- [ ] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
-- [ ] Implement init and reconfigure prompts for repository, branch, paths, selected skills, direction, agents, publication mode, and final review.
-- [ ] Connect supported agent installation through the upstream `skills` interface without bypassing conflict checks; expose unsupported agent errors.
+- [x] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
+- [x] Implement init and reconfigure prompts for repository, branch, paths, selected skills, direction, agents, publication mode, and final review.
+- [x] Connect supported agent installation through the upstream `skills` interface without bypassing conflict checks; expose unsupported agent errors.
 
 Validation: An interactive setup against a fixture repository produces a reviewable config and installs chosen skills without changing unselected content; reconfiguration prefills prior answers.
 
 ### Task 3 — Read-only change planner
-Status: pending
+Status: completed
 Depends on: Tasks 1 and 2
 
-- [ ] Inventory all files under selected skill directories, identify source/local/baseline changes including first adoption, missing files, name collisions, and exclusions.
-- [ ] Produce a deterministic per-file change set and human-readable status/diff; handle compatible independent changes and report overlapping conflicts without touching affected files.
-- [ ] Track deletion proposals separately and require explicit choice before they can be applied.
+- [x] Inventory all files under selected skill directories, identify source/local/baseline changes including first adoption, missing files, name collisions, and exclusions.
+- [x] Produce a deterministic per-file change set and human-readable status/diff; handle compatible independent changes and report overlapping conflicts without touching affected files.
+- [x] Track deletion proposals separately and require explicit choice before they can be applied.
 
 Validation: Fixture cases cover new and unchanged skills, both change directions, disjoint changes, conflicts, missing baseline, deletes, exclusions, and unrelated files; status/diff cause no writes.
 
 ### Task 4 — Safe local apply and recovery
-Status: pending
+Status: completed
 Depends on: Task 3
 
-- [ ] Implement pull, push, and sync direction rules and change previews, including explicit noninteractive confirmation.
-- [ ] Recheck source revision and local file content before writes; apply only the approved change set.
-- [ ] Persist baselines only after verified outcomes, and record/report partial outcomes so an interrupted or failed run can be resumed safely.
+- [x] Implement pull, push, and sync direction rules and change previews, including explicit noninteractive confirmation.
+- [x] Recheck source revision and local file content before writes; apply only the approved change set.
+- [x] Persist baselines only after verified outcomes, and record/report partial outcomes so an interrupted or failed run can be resumed safely.
 
 Validation: Pull-only and push-only cannot write the opposite side; conflict and interrupted-run fixtures preserve existing edits; repeated successful sync makes no changes.
 
 ### Task 5 — Publication modes
-Status: pending
+Status: in_progress
 Depends on: Task 4
 
 - [ ] Implement local-commit staging of managed files only, and branch publication without force-push.
@@ -91,6 +91,6 @@ Run the package build and focused unit/integration tests. Exercise wizard setup,
 
 ## Handover
 
-Current: Not started.
-Next: Task 1 — Scaffold and configuration contract.
-Blockers: None. Plan is ready for review before execution.
+Current: Draft PR #1 includes the v1 CLI, wizard, upstream agent installation adapter, per-skill state, conflict and deletion handling, all publication modes, and pending branch/PR recovery. Eighteen automated tests pass after a clean `npm ci`; a real GitHub pull-request lifecycle created, updated, merged, and recovered a pending publication without touching main. The package now requires Node.js 22.20.0 or later, matching pinned `skills@1.7.0`.
+Next: Test protected-branch and concurrent-main failures, then run the isolated two-repository walkthrough and complete platform documentation.
+Blockers: Windows/macOS execution is not available in this validation run. Keep the PR in draft until those checks pass.

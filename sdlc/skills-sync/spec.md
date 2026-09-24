@@ -20,6 +20,8 @@ A hosted registry, cross-project distribution service, multiple skill sources in
 ### Configuration and setup
 
 - **FR-1:** Provide an interactive `init` or `configure` wizard that accepts a Git repository URL or local path, source branch and skills directory, project skills directory, skills selection, synchronization direction, agent installation targets, and publication mode. Show a review screen before writing files. Existing choices must be prefilled when reconfiguring.
+> **Superseded 2026-09-24:** FR-2 selection is replaced by run-time discovery with `.skillsignore`; see `sdlc/skillsignore/spec.md`.
+
 - **FR-2:** Discover skill directories containing `SKILL.md` at the configured source path. The user may select all skills or named skills. Persist selections in a versioned, project-local configuration that can be reviewed and edited. Reject duplicate names and invalid paths.
 - **FR-3:** Support bidirectional, pull-only, and push-only synchronization. A pull-only source must never be written; a push-only run must never replace local skill content with remote content. Source and target paths may differ.
 - **FR-4:** On a noninteractive terminal, use saved configuration without prompts; if absent or invalid, fail with an actionable error. Never print authentication secrets.

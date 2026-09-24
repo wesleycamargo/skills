@@ -1,0 +1,85 @@
+services:
+  devcontainer:
+    # Pull the prebuilt image (CI builds it from this directory's Dockerfile
+    # and publishes it as ai-hermes-devbox-image). No local build step --
+    # for an extra local layer, swap this for a `build:` block pointing at a
+    # Dockerfile that does `FROM` this image. Requires `docker login
+    # ghcr.io` (private package).
+    image: ghcr.io/wesleycamargo/devcontainer-template/ai-hermes-devbox-image:latest
+    init: true
+    # No `command:` override. The image's entrypoint runs sshd in the
+    # foreground, so the container stays up on its own and is a working SSH
+    # gateway whether it was started by Compose, `docker run`, or VS Code.
+    #
+    # The internal port is always 2222 (the container contract). Only the host
+    # side varies, so several projects can run at once: set HERMES_SSH_PORT in
+    # .env (see .env.example) to a value that is stable for this project.
+    # Loopback-only, so nothing outside this machine can reach it.
+    ports:
+      - "127.0.0.1:${HERMES_SSH_PORT:-2222}:2222"
+    environment:
+      # Start the Hermes gateway + dashboard in this container; a bare
+      # `docker run` leaves this unset and gets sshd only.
+      HERMES_AUTOSTART_SERVICES: "1"
+      # The container cannot see its own published port -- pass it through so
+      # `hermes-ssh-info` prints a host port you can actually connect to.
+      HERMES_SSH_HOST_PORT: "${HERMES_SSH_PORT:-2222}"
+      # Pins `hermes-ssh-info`'s suggested terminal.cwd to the workspace mount
+      # below instead of its /workspaces/*/ auto-detect glob, which falls back
+      # to /home/hermes if it ever can't find a match. Keep this in sync with
+      # workspaceFolder (devcontainer.json) and the bind mount target (below).
+      HERMES_SSH_CWD: "/workspaces"
+      # Consumed by /usr/local/bin/sync-project-skills (called from
+      # entrypoint.sh on every start): keeps .agents/skills current with
+      # upstream and installs it for every agent it detects installed, at
+      # project and global scope. See that script for what each var does.
+      SYNC_SKILLS_USER: hermes
+      SYNC_SKILLS_AGENTS: "*"
+    depends_on:
+      ssh-pubkeys:
+        condition: service_completed_successfully
+    # The Hermes dashboard (127.0.0.1:9119) and gateway (127.0.0.1:8642) are
+    # not published: VS Code forwards the dashboard (`forwardPorts` in
+    # devcontainer.json), and `ssh -L` can reach either through the gateway.
+    volumes:
+      - ../..:/workspaces:cached
+      # Named volumes make a fresh checkout usable on any host: Docker creates
+      # them on demand and copies each image directory into it on first use.
+      # They keep CLI logins across normal container rebuilds without depending
+      # on personal host paths or baking credentials into the image.
+      - claude-data:/home/hermes/.claude
+      - codex-data:/home/hermes/.codex
+      # Hermes USER DATA only -- credentials, config, sessions, memories,
+      # skills, logs. Hermes' code and runtime now live in the image
+      # (/usr/local/lib/hermes-agent, /opt/hermes), so pulling a newer image
+      # actually upgrades Hermes. When this volume held the runtime too, Docker
+      # seeded it once and every later upgrade was invisible.
+      - hermes-data:/home/hermes/.hermes
+      # Host public keys collected by ssh-pubkeys, at the contract path the
+      # image reads. Read-only: the entrypoint copies them to hermes's
+      # authorized_keys rather than using them in place.
+      - ssh-pubkeys:/run/hermes-ssh:ro
+      # The container's own SSH host identity. Persisted so a rebuild or
+      # recreate does not change the fingerprint -- Hermes connects with
+      # StrictHostKeyChecking=accept-new and would refuse a changed key.
+      - ssh-host-keys:/var/lib/hermes-ssh/host_keys
+
+  # One-shot: copies only the host's ~/.ssh/*.pub into the ssh-pubkeys volume
+  # and exits, so the devcontainer (where agents run) never sees the private
+  # keys next to them. Re-runs on every `up`, picking up new or removed keys.
+  ssh-pubkeys:
+    image: busybox:1.37
+    volumes:
+      - ${HOME:-${USERPROFILE:-}}/.ssh:/host-ssh:ro
+      - ssh-pubkeys:/keys
+    command:
+      - sh
+      - -c
+      - cat /host-ssh/*.pub 2>/dev/null | tr -d '\r' > /keys/authorized_keys; chmod 644 /keys/authorized_keys
+
+volumes:
+  claude-data:
+  codex-data:
+  hermes-data:
+  ssh-pubkeys:
+  ssh-host-keys:

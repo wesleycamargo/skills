@@ -1,0 +1,194 @@
+# Skills Sync (development branch)
+
+This repository contains an early implementation of `@wesleycamargo/skills-sync` alongside the existing `skills/write-for-me` skill. The CLI is not yet ready for general use or for important repositories until release validation completes. See `sdlc/skills-sync/spec.md` and `plan.md` for the v1 contract.
+
+Requires Node.js 22.20.0 or later, matching the pinned upstream `skills` CLI dependency.
+
+## Requirements
+
+- Node.js 22.20.0 or later
+- npm, Git, and read access to the configured source repository
+- Write access only for publication modes that write the source
+- An authenticated `gh` CLI for `pull-request` mode with a GitHub source
+
+The CLI stores no credentials. Git and `gh` use your existing local authentication.
+
+## Install
+
+The package is published publicly to npmjs as `@wesleycamargo/skills-sync`. It remains under validation and is not yet ready for important repositories.
+
+Run it directly with npx from a project's root directory, without installing anything:
+
+```sh
+npx @wesleycamargo/skills-sync init
+```
+
+Any command works the same way, for example `npx @wesleycamargo/skills-sync status`. npx downloads the latest version on first use.
+
+To pin a version for the project instead, install it as a dev dependency:
+
+```sh
+npm install --save-dev @wesleycamargo/skills-sync
+npx --no-install skills-sync init
+```
+
+Use the scoped name with npx. Unscoped `npx skills-sync` works only after the package is installed, because npm looks up package names, not command names.
+
+### Setup script
+
+From your project's root directory, run the setup script from a copy of this repository:
+
+```sh
+/path/to/skills-sync/scripts/setup-skills-sync.sh
+```
+
+It installs from npmjs without changing `.npmrc` or asking for a token. Use `--global` to install globally, `--version <version>` to pick a version, and `--no-init` to skip the wizard.
+
+### Prereleases
+
+Pushes to `feature/*` branches publish prereleases under the `beta` dist-tag. They never become `latest`:
+
+```sh
+npx --yes @wesleycamargo/skills-sync@beta status
+```
+
+### Legacy GitHub Packages versions
+
+Versions up to `0.3.1` were also published to GitHub Packages at `npm.pkg.github.com`. No future releases are published there; install from npmjs instead.
+
+### Install from a built package
+
+For local validation, build a tarball and install it into a disposable project:
+
+```sh
+npm ci
+npm test
+npm run build
+npm pack
+
+cd /path/to/project
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.0.0-development.tgz
+npx --no-install skills-sync init
+```
+
+The interactive wizard uses the same prompts as `npx skills add`. It asks for:
+
+- the source repository, source branch, and source and project skill directories, as text inputs that are checked as you type;
+- the direction and publication mode, from lists that explain each option;
+- the agents to install to, when the project skills directory is `.agents/skills`. Agents that read `.agents/skills` directly are always included and are not saved.
+
+The wizard does not ask which skills to sync. Every skill with a `SKILL.md` in the source skills directory or in the project skills directory is synced, unless `.skillsignore` excludes it. The wizard lists the skills it will sync and the ones it ignores.
+
+### Excluding skills with .skillsignore
+
+Put a `.skillsignore` file in the project root to keep skills out of sync. It has one skill name per line; `*` and `?` are wildcards, and lines starting with `#` are comments:
+
+```text
+# Local experiments stay local
+draft-*
+my-private-skill
+```
+
+An ignored skill is left exactly as it is; nothing is deleted. A pull-only project skips skills that exist only in the project, and a push-only project skips skills that exist only in the source. Each skip prints a notice until you add the skill to `.skillsignore`. Configurations saved by older versions with a `selection` list keep working. Rerunning `init` replaces the list with a `.skillsignore` for the skills it left out.
+
+The wizard shows a configuration summary and asks before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices. Press Escape or Ctrl+C at any prompt to cancel: nothing is written, and the command exits with status `0`.
+
+Setup needs an interactive terminal. For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. `init` without a terminal, or a missing or invalid configuration, fails with a concise next action instead of prompting.
+
+## Publishing
+
+The release workflow publishes to npmjs only, using npm trusted publishing with provenance:
+
+- a push to `feature/*` publishes a prerelease, such as `0.4.0-beta.0`, under the `beta` dist-tag;
+- a push to `main`, or a manual run of the workflow, publishes a stable version under `latest` and tags the released commit `v<version>`.
+
+Each run computes its version, tests, builds, and publishes. A run with nothing to release publishes nothing. The publish script checks that the version matches the channel, never republishes an existing version, and never retries an uncertain result. Release runs never overlap.
+
+### Versioning
+
+Each release computes its version from the commit subjects since the last release tag. Put a marker in square brackets in each commit subject:
+
+- `[major]` for a breaking change;
+- `[minor]` for new behavior;
+- `[patch]` for fixes and documentation.
+
+A commit with no marker counts as `[minor]`. The release takes the largest marker among its commits: `major` over `minor`, and `minor` over `patch`. Merge commits and `[skip ci]` commits do not count. Stable releases are tagged `v<version>`; the tags and npmjs show what was released.
+
+Preview the next version from the current commit:
+
+```sh
+npm run release:preview
+npm run release:preview -- --channel beta
+```
+
+The committed `version` is always `0.0.0-development`. The workflow sets the real version only inside the release run, and the publish script refuses to publish the placeholder. Use `[skip ci]` in a commit subject to push without releasing.
+
+### Publishing with an OTP
+
+For an emergency local release, apply the computed version first and then publish with a one-time password:
+
+```sh
+node scripts/release-version.mjs apply
+NPM_OTP=<current-six-digit-code> bash scripts/publish-npm.sh
+node scripts/release-version.mjs tag <version>
+git checkout -- package.json package-lock.json
+```
+
+Use the local OTP path only when the workflow cannot run. The script skips an existing public version and stops on staged, 2FA, conflict, or uncertain registry results; resolve those npm states before another attempt.
+
+## Commands
+
+Run these from the configured project directory. The examples assume the package is installed in the project; without installing it, replace `npx skills-sync` with `npx @wesleycamargo/skills-sync`.
+
+```sh
+npx skills-sync status
+npx skills-sync diff
+npx skills-sync pull --yes
+npx skills-sync push --yes --publish
+npx skills-sync sync --yes
+npx skills-sync sync --yes --publish
+```
+
+`status` summarizes planned changes and `diff` shows content differences without writes. `pull`, `push`, and `sync` show their change preview before applying it; `--yes` supplies the explicit noninteractive confirmation. `--publish` is separately required before a project-side change may write the source. The configured `pull` and `push` directions prevent reverse writes.
+
+Synchronization always uses the configured project copy under `.agents/skills` (or the configured target path). Optional agent copies are installed only after synchronization safety checks succeed; an edited agent copy is never overwritten silently.
+
+## Publication modes
+
+| Mode | Destination and requirements |
+| --- | --- |
+| `local-commit` | Creates a normal commit in a local source checkout on the configured branch; never pushes. |
+| `branch` | Pushes selected skill changes to the configured non-source branch. |
+| `pull-request` | Pushes a configured branch and creates or updates one GitHub pull request. Requires `gh auth status` to succeed. |
+| `main` | Pushes a normal commit directly to the configured source branch. GitHub branch rules and write permission still apply. |
+| `override-main` | Replaces conflicting content only inside selected skills through a normal commit. It never force-pushes or rewrites history. |
+
+For `override-main`, review the replacement preview and supply all confirmations on every noninteractive run:
+
+```sh
+npx skills-sync sync --yes --publish --override-main \
+  --override-target=<source-repository>@<source-branch>
+```
+
+## Conflicts, deletions, and recovery
+
+The CLI records a portable per-skill baseline in `.agents/skills-sync-state.json`. It carries one-sided edits, attempts compatible text merges, and leaves overlapping or binary changes for manual resolution. It does not silently adopt an existing project skill; choose an explicit side instead:
+
+```sh
+npx skills-sync sync --yes --adopt-source=<skill>
+npx skills-sync sync --yes --adopt-project=<skill>
+```
+
+Deletions are proposals, not automatic actions. Review the preview, then confirm each selected file explicitly:
+
+```sh
+npx skills-sync sync --yes --publish --delete=<skill>/<file>
+```
+
+Branch and pull-request publication can remain pending until the source branch accepts the change. Do not delete the state file to bypass this condition: after the branch or PR is merged, run `sync --yes` to reconcile the pending publication. If the source advances while the CLI is preparing publication, it stops without publishing stale content; review `status` or `diff` and retry from the refreshed comparison.
+
+## Scope and validation status
+
+GitHub Actions workflow generation and automation are outside v1. This repository is still under validation: do not use this CLI to synchronize important repositories or describe it as generally available until the remaining release checks complete.
+
+**Work still required before v1 release:** complete the protected-branch or limited-permission check and Windows validation, then perform final independent review. The current three-way merge handles compatible UTF-8 text and refuses binary or overlapping edits.
