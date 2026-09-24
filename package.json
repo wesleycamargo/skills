@@ -20,7 +20,9 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json --noEmit && obuild",
     "test:publish-npm": "bash scripts/publish-npm.test.sh",
-    "test": "npm run test:publish-npm && npm run build && node -e \"require('node:fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test dist-test/*.test.js"
+    "test": "npm run test:publish-npm && npm run test:release-version && npm run build && node -e \"require('node:fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test dist-test/*.test.js",
+    "test:release-version": "node --test scripts/*.test.mjs",
+    "release:preview": "node scripts/release-version.mjs preview"
   },
   "devDependencies": {
     "@clack/prompts": "1.7.0",
