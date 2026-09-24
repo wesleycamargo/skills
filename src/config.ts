@@ -16,7 +16,7 @@ export const configPath = (root: string) => path.join(root, '.agents', 'skills-s
 
 export function safePath(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value || value.includes('\\') || path.posix.isAbsolute(value) ||
-      value.split('/').some(p => !p || p === '.' || p === '..') || /^[A-Za-z]:/.test(value)) {
+      value.split('/').some(p => !p || p === '.' || p === '..' || /[*?\[\]:]/.test(p)) || /^[A-Za-z]:/.test(value)) {
     throw new Error(`${label} must be a safe relative POSIX path`);
   }
   return value;
@@ -30,7 +30,7 @@ export function validateConfig(input: unknown): Config {
   if (typeof c.source.branch !== 'string' || !/^[\w][\w.\/-]*$/.test(c.source.branch) || c.source.branch.includes('..')) throw new Error('Invalid source.branch');
   safePath(c.source.path, 'source.path');
   safePath(c.target?.path, 'target.path');
-  if (!Array.isArray(c.selection) || !c.selection.every((s: unknown) => typeof s === 'string' && /^[\w-]+$/.test(s)) || new Set(c.selection).size !== c.selection.length) throw new Error('selection must contain unique skill names');
+  if (!Array.isArray(c.selection) || !c.selection.every((s: unknown) => typeof s === 'string' && s.trim() !== '' && s !== '.' && s !== '..' && !/[\\/\0-\x1f\x7f*?\[\]:]/.test(s)) || new Set(c.selection).size !== c.selection.length) throw new Error('selection must contain unique skill directory names');
   if (!['bidirectional', 'pull', 'push'].includes(c.direction)) throw new Error('Invalid direction');
   if (!Array.isArray(c.agents) || !c.agents.every((s: unknown) => typeof s === 'string')) throw new Error('Invalid agents');
   if (!['local-commit', 'branch', 'pull-request', 'main', 'override-main'].includes(c.publication?.mode)) throw new Error('Invalid publication mode');
