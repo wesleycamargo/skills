@@ -17,20 +17,22 @@ The CLI stores no credentials. Git and `gh` use your existing local authenticati
 
 The package is published publicly to npmjs as `@wesleycamargo/skills-sync`. It remains under validation and is not yet ready for important repositories.
 
-From a project's root directory:
+Run it directly with npx from a project's root directory, without installing anything:
+
+```sh
+npx @wesleycamargo/skills-sync init
+```
+
+Any command works the same way, for example `npx @wesleycamargo/skills-sync status`. npx downloads the latest version on first use.
+
+To pin a version for the project instead, install it as a dev dependency:
 
 ```sh
 npm install --save-dev @wesleycamargo/skills-sync
 npx --no-install skills-sync init
 ```
 
-For a one-off command without adding the package to the project:
-
-```sh
-npx --package=@wesleycamargo/skills-sync skills-sync init
-```
-
-Do not run unscoped `npx skills-sync` before installing the package: npmjs resolves package names, not executable names.
+Use the scoped name with npx. Unscoped `npx skills-sync` works only after the package is installed, because npm looks up package names, not command names.
 
 ### GitHub Packages installation
 
@@ -91,7 +93,7 @@ Use the local OTP path only to bootstrap the first public version. Later npmjs r
 
 ## Commands
 
-Run these from the configured project directory:
+Run these from the configured project directory. The examples assume the package is installed in the project; without installing it, replace `npx skills-sync` with `npx @wesleycamargo/skills-sync`.
 
 ```sh
 npx skills-sync status
