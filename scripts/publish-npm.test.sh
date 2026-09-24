@@ -117,6 +117,12 @@ stage_only_rejection_case() {
     test "$(grep -c '^publish' "$fixture/log")" -eq 1
 }
 
+workflow_oidc_toolchain_case() {
+  local workflow="$ROOT/.github/workflows/publish-package.yml"
+  grep -Fq 'id-token: write' "$workflow" &&
+    grep -Fq 'npm install --global npm@11.5.1' "$workflow"
+}
+
 fixture="$TMP/published"
 make_fixture "$fixture"
 check 'published version skips npm publish' published_case "$fixture"
@@ -148,6 +154,8 @@ check 'trusted-publisher rejection has a safe remediation' trusted_publisher_rej
 fixture="$TMP/stage-only-rejection"
 make_fixture "$fixture"
 check 'stage-only rejection does not retry direct publishing' stage_only_rejection_case "$fixture"
+
+check 'workflow uses npm with trusted-publishing support' workflow_oidc_toolchain_case
 
 printf '%s passed; %s failed.\n' "$pass" "$fail"
 test "$fail" -eq 0

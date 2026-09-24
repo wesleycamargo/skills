@@ -55,7 +55,7 @@ This specification preserves the existing scoped package identity. Consumers inv
 
 - Automated tests remain self-contained and do not require an npm account, npm token, or live npmjs publication.
 - Release validation MUST include an inspection equivalent to `npm pack --dry-run` and a clean install/execution check against the npmjs artifact.
-- The release workflow MUST use least-privilege publishing credentials or npm trusted publishing, subject to the account configuration selected by the release owner.
+- The release workflow MUST use least-privilege publishing credentials or npm trusted publishing, subject to the account configuration selected by the release owner. The npmjs job MUST use npm 11.5.1 or later, which supports npm trusted publishing.
 - Documentation and errors MUST be concise enough for a consumer to distinguish a missing local installation from an npm registry-resolution problem.
 
 ## Acceptance Criteria
