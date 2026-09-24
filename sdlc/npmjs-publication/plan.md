@@ -79,7 +79,7 @@ Depends on: Tasks 1, 2, and 4
 - [ ] Run the release path a second time or its equivalent version check to prove that the existing npmjs version is skipped rather than republished.
 
 Validation:
-- `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs initially rejected direct publication because the current login did not satisfy its 2FA policy. Browser-approval flows reserved `0.1.2` and `0.1.3`, but npm's read endpoint and clean installation returned 404 for both; package access reports the package as public with read-write access. npm will not permit either version to be reused, so this task continues with `0.1.4`. `npm pkg fix` normalized the repository field and follow-up commit `3499c44` was pushed. A clean consumer installation and existing-version skip check remain pending successful `0.1.4` publication.
+- `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs initially rejected direct publication because the current login did not satisfy its 2FA policy. Browser-approval flows reserved `0.1.2` and `0.1.3`, but npm's read endpoint and clean installation returned 404 for both; package access reports the package as public with read-write access. npm will not permit either version to be reused, so this task continues with `0.1.4`. `npm pkg fix` normalized the repository field and follow-up commit `3499c44` was pushed. The isolated `0.1.4` worktree passed all 20 tests and packed 10 production files, but npm then returned HTTP 409 saying `0.1.4` was previously staged. `npm stage list` returned no stage ID, so a maintainer must inspect npmjs's Staged Packages page before another write. A clean consumer installation and existing-version skip check remain pending.
 
 ### Task 6 — Record outcomes and hand off for independent validation
 Status: pending
@@ -106,6 +106,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — versions `0.1.2` and `0.1.3` are reserved but not installable; preparing `0.1.4` for user-terminal publication.
-Next: Run final checks, commit and push `0.1.4`; in a user TTY, run one publish command, complete its 2FA prompt, and wait for its success result before any retry; then run a clean consumer install.
-Blockers: npm's noninteractive browser-approval flows left `0.1.2` and `0.1.3` non-reusable. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.4` evaluation release.
+Current: Task 5 — `0.1.4` is validated in an isolated worktree, but npm reports it as previously staged and not yet publicly installable.
+Next: A maintainer must inspect npmjs's Staged Packages page for `@wesleycamargo/skills-sync`, approve or reject the `0.1.4` stage, then report the result before any further publish attempt.
+Blockers: npm returned HTTP 409 for a previously staged `0.1.4`, while `npm stage list` returned no stage ID. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.4` evaluation release.
