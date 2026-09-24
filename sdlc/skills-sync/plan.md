@@ -27,7 +27,7 @@ Status: completed
 Validation: Package builds; config round-trips, unsupported versions, unsafe paths, and missing settings produce clear results.
 
 ### Task 2 — Discovery and wizard
-Status: in_progress
+Status: completed
 Depends on: Task 1
 
 - [ ] Discover skills with `SKILL.md` from remote or local Git sources, including the current `skills/` layout.
@@ -37,7 +37,7 @@ Depends on: Task 1
 Validation: An interactive setup against a fixture repository produces a reviewable config and installs chosen skills without changing unselected content; reconfiguration prefills prior answers.
 
 ### Task 3 — Read-only change planner
-Status: pending
+Status: completed
 Depends on: Tasks 1 and 2
 
 - [ ] Inventory all files under selected skill directories, identify source/local/baseline changes including first adoption, missing files, name collisions, and exclusions.
@@ -47,7 +47,7 @@ Depends on: Tasks 1 and 2
 Validation: Fixture cases cover new and unchanged skills, both change directions, disjoint changes, conflicts, missing baseline, deletes, exclusions, and unrelated files; status/diff cause no writes.
 
 ### Task 4 — Safe local apply and recovery
-Status: pending
+Status: completed
 Depends on: Task 3
 
 - [ ] Implement pull, push, and sync direction rules and change previews, including explicit noninteractive confirmation.
@@ -57,7 +57,7 @@ Depends on: Task 3
 Validation: Pull-only and push-only cannot write the opposite side; conflict and interrupted-run fixtures preserve existing edits; repeated successful sync makes no changes.
 
 ### Task 5 — Publication modes
-Status: pending
+Status: in_progress
 Depends on: Task 4
 
 - [ ] Implement local-commit staging of managed files only, and branch publication without force-push.
@@ -91,6 +91,6 @@ Run the package build and focused unit/integration tests. Exercise wizard setup,
 
 ## Handover
 
-Current: Draft implementation in pull request #1. Package, schema, wizard, baseline planner, safe conflict refusal, compatible text merge, and initial publication paths are present. Unit tests and an isolated Git round trip pass.
-Next: Complete Task 2 agent installation, then finish pending branch/PR behavior and broad integration checks in Tasks 3–6.
-Blockers: None. Do not merge the draft until the remaining acceptance criteria are verified.
+Current: Draft implementation in pull request #1. The CLI supports the wizard, upstream agent installation, explicit adoption, text diffs, baseline tracking, compatible UTF-8 merges, deletion and override confirmations, and all five publication modes. Eighteen unit and isolated Git integration tests pass, including branch/PR pending updates and agent-copy protection.
+Next: Complete Task 5 publication failure and branch-policy checks, then Task 6 documentation and validation against isolated copies of the two intended repositories and a second unrelated repository.
+Blockers: Real authenticated GitHub PR behavior and Windows/macOS runs have not been exercised. Do not merge the draft until these release checks pass.
