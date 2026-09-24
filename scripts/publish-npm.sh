@@ -17,6 +17,11 @@ PACKAGE="$(node -p "require('./package.json').name")"
 VERSION="$(node -p "require('./package.json').version")"
 [[ -n "$PACKAGE" && -n "$VERSION" ]] || fail "package.json must define name and version."
 
+set +u
+actions_mode="$GITHUB_ACTIONS"
+otp="$NPM_OTP"
+set -u
+
 view_output="$(mktemp)"
 publish_output="$(mktemp)"
 trap 'rm -f "$view_output" "$publish_output"' EXIT
@@ -29,17 +34,14 @@ if ! grep -Eqi 'E404|No match found|not found' "$view_output"; then
   fail "Cannot determine whether $PACKAGE@$VERSION exists on npmjs; do not retry publication."
 fi
 
-stage_json="$(npm stage list "$PACKAGE" --json --registry="$REGISTRY" 2>/dev/null)" ||
-  fail "Cannot inspect staged npm versions; do not retry publication."
-normalized_stage_json="$(tr -d '[:space:]' <<<"$stage_json")"
-if [[ "$normalized_stage_json" == *"\"version\":\"$VERSION\""* ]]; then
-  fail "$PACKAGE@$VERSION is already staged; approve or reject that stage before any new publication attempt."
+if [[ "$actions_mode" != true ]]; then
+  stage_json="$(npm stage list "$PACKAGE" --json --registry="$REGISTRY" 2>/dev/null)" ||
+    fail "Cannot inspect staged npm versions; do not retry publication."
+  normalized_stage_json="$(tr -d '[:space:]' <<<"$stage_json")"
+  if [[ "$normalized_stage_json" == *"\"version\":\"$VERSION\""* ]]; then
+    fail "$PACKAGE@$VERSION is already staged; approve or reject that stage before any new publication attempt."
+  fi
 fi
-
-set +u
-actions_mode="$GITHUB_ACTIONS"
-otp="$NPM_OTP"
-set -u
 publish() {
   if [[ "$actions_mode" == true ]]; then
     npm publish --access public --provenance --registry="$REGISTRY" >"$publish_output" 2>&1

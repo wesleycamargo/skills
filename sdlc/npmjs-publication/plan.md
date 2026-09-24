@@ -51,7 +51,7 @@ Depends on: Tasks 1–2
 - [x] Retain least-privilege workflow permissions; direct GitHub Actions publishing uses npm trusted publishing and provenance.
 
 Validation:
-- Completed 2026-09-24: `scripts/publish-npm.sh` handles local `NPM_OTP` publication and GitHub Actions provenance publication, checks public/staged versions, and never retries conflicts or uncertain results. `scripts/publish-npm.test.sh` covers six mocked paths: existing version, missing OTP, local OTP, Actions provenance, staged version, and conflict. `npm test` passed all six publisher tests and the existing 20 tests.
+- Completed 2026-09-24: `scripts/publish-npm.sh` handles local `NPM_OTP` publication and GitHub Actions provenance publication, checks public/staged versions where the credential can inspect them, and never retries conflicts or uncertain results. The initial Actions run showed that trusted publishing cannot call `npm stage list` before the first public version, so Actions skips that unavailable preflight and relies on direct-publish conflict handling; local releases retain the staged-version guard. `scripts/publish-npm.test.sh` covers six mocked paths: existing version, missing OTP, local OTP, Actions provenance without staged-API access, staged version, and conflict. `npm test` passed all six publisher tests and the existing 20 tests.
 
 ### Task 4 — Update installation and transition documentation
 Status: completed

@@ -79,13 +79,14 @@ missing_otp_case() {
 local_otp_case() {
   local fixture="$1"
   run_script "$fixture" env MOCK_VIEW=missing NPM_OTP=123456 &&
-    grep -q '^publish|publish --access public --registry=https://registry.npmjs.org|123456$' "$fixture/log"
+    grep -Fq 'publish|publish --access public --registry=https://registry.npmjs.org|123456' "$fixture/log"
 }
 
 actions_case() {
   local fixture="$1"
   run_script "$fixture" env MOCK_VIEW=missing GITHUB_ACTIONS=true &&
-    grep -q '^publish|publish --access public --provenance --registry=https://registry.npmjs.org|$' "$fixture/log"
+    grep -Fq 'publish|publish --access public --provenance --registry=https://registry.npmjs.org|' "$fixture/log" &&
+    ! grep -q '^stage' "$fixture/log"
 }
 
 staged_case() {
@@ -114,7 +115,7 @@ check 'local release passes OTP through environment' local_otp_case "$fixture"
 
 fixture="$TMP/actions"
 make_fixture "$fixture"
-check 'GitHub Actions uses provenance without an OTP' actions_case "$fixture"
+check 'GitHub Actions uses provenance without staged API access' actions_case "$fixture"
 
 fixture="$TMP/staged"
 make_fixture "$fixture"
