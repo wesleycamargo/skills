@@ -74,9 +74,22 @@ npx --no-install skills-sync init
 The interactive wizard uses the same prompts as `npx skills add`. It asks for:
 
 - the source repository, source branch, and source and project skill directories, as text inputs that are checked as you type;
-- the skills to sync, in a searchable list: type to filter, use Space to select, and use **Select All** to choose every skill;
 - the direction and publication mode, from lists that explain each option;
 - the agents to install to, when the project skills directory is `.agents/skills`. Agents that read `.agents/skills` directly are always included and are not saved.
+
+The wizard does not ask which skills to sync. Every skill with a `SKILL.md` in the source skills directory or in the project skills directory is synced, unless `.skillsignore` excludes it. The wizard lists the skills it will sync and the ones it ignores.
+
+### Excluding skills with .skillsignore
+
+Put a `.skillsignore` file in the project root to keep skills out of sync. It has one skill name per line; `*` and `?` are wildcards, and lines starting with `#` are comments:
+
+```text
+# Local experiments stay local
+draft-*
+my-private-skill
+```
+
+An ignored skill is left exactly as it is; nothing is deleted. A pull-only project skips skills that exist only in the project, and a push-only project skips skills that exist only in the source. Each skip prints a notice until you add the skill to `.skillsignore`. Configurations saved by older versions with a `selection` list keep working. Rerunning `init` replaces the list with a `.skillsignore` for the skills it left out.
 
 The wizard shows a configuration summary and asks before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices. Press Escape or Ctrl+C at any prompt to cancel: nothing is written, and the command exits with status `0`.
 

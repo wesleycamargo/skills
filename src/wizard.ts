@@ -1,4 +1,5 @@
 import { Config, Direction, fieldError, Publication, validateConfig } from './config.js';
+import { isIgnored } from './sync.js';
 import { CANCEL, Cancel, Option, Prompts } from './prompts.js';
 import { AgentType, agents, getNonUniversalAgents, getUniversalAgents, getVisibleUniversalAgents } from './vendor/skills/agents.js';
 
@@ -7,8 +8,13 @@ export interface WizardDeps {
   old?: Config;
   /** Checks out the source, lists skills with SKILL.md, and cleans up the checkout. */
   discoverSkills(repository: string, branch: string, sourcePath: string): Promise<SkillInfo[]>;
+  /** Skills with SKILL.md in the project skills directory. */
+  projectSkills(targetPath: string): Promise<string[]>;
+  /** The project's .skillsignore: whether it exists, and its patterns. */
+  skillsIgnore: { exists: boolean; patterns: string[] };
 }
-export type WizardResult = { config: Config } | { cancelled: true };
+/** `skillsIgnore` lists skills to write to a new .skillsignore when migrating a legacy selection. */
+export type WizardResult = { config: Config; skillsIgnore?: string[] } | { cancelled: true };
 
 const AGENT_DIR = '.agents/skills';
 
@@ -32,15 +38,14 @@ function answer<T>(value: T | Cancel): T {
   return value as T;
 }
 
-const shorten = (text?: string) => text && text.length > 60 ? `${text.slice(0, 57)}…` : text;
 export const maskCredentials = (repository: string) => repository.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]+@/i, '$1***@');
 
-export async function runWizard(prompts: Prompts, { old, discoverSkills }: WizardDeps): Promise<WizardResult> {
-  try { return { config: await ask(prompts, old, discoverSkills) }; }
+export async function runWizard(prompts: Prompts, deps: WizardDeps): Promise<WizardResult> {
+  try { return await ask(prompts, deps); }
   catch (error) { if (error instanceof Cancelled) return { cancelled: true }; throw error; }
 }
 
-async function ask(prompts: Prompts, old: Config | undefined, discoverSkills: WizardDeps['discoverSkills']): Promise<Config> {
+async function ask(prompts: Prompts, { old, discoverSkills, projectSkills, skillsIgnore }: WizardDeps): Promise<{ config: Config; skillsIgnore?: string[] }> {
   const text = async (message: string, defaultValue: string | undefined, validate: (value: string) => string | undefined) =>
     answer(await prompts.text({ message, defaultValue, validate })).trim();
 
@@ -57,15 +62,14 @@ async function ask(prompts: Prompts, old: Config | undefined, discoverSkills: Wi
   if (!available.length) { spinner.error('No skills found'); throw new Error(`No skills with SKILL.md found in ${sourcePath}`); }
   spinner.stop(`Found ${available.length} skill${available.length === 1 ? '' : 's'}`);
 
-  const names = available.map(skill => skill.name);
-  const missing = old?.selection.filter(skill => !names.includes(skill)) ?? [];
-  if (missing.length) prompts.log.warn(`Saved skills no longer in the source: ${missing.join(', ')}`);
-  const selection = answer(await prompts.searchMultiselect({
-    message: 'Select skills to sync',
-    items: available.map(skill => ({ value: skill.name, label: skill.name, hint: shorten(skill.description) })),
-    initialSelected: old?.selection.filter(skill => names.includes(skill)) ?? [],
-    maxVisible: 20, selectAll: true, required: true,
-  }));
+  // Every discovered skill is synced unless .skillsignore matches it; no selection is saved.
+  const names = [...new Set([...available.map(skill => skill.name), ...await projectSkills(targetPath)])].sort();
+  // A legacy selection becomes a .skillsignore listing the skills it left out, so the synced set stays the same.
+  const migrated = old?.selection && !skillsIgnore.exists ? names.filter(skill => !old.selection!.includes(skill)) : undefined;
+  const patterns = migrated ?? skillsIgnore.patterns;
+  const ignored = names.filter(skill => isIgnored(skill, patterns));
+  prompts.log.info(`Skills to sync: ${names.filter(skill => !ignored.includes(skill)).join(', ') || 'none'}`);
+  if (ignored.length) prompts.log.info(`Ignored by .skillsignore: ${ignored.join(', ')}`);
 
   const direction = answer(await prompts.select({ message: 'Direction', options: directions, initialValue: old?.direction ?? 'bidirectional' }));
   const chosenAgents = targetPath === AGENT_DIR ? await askAgents(prompts, old) : skipAgents(prompts);
@@ -75,10 +79,10 @@ async function ask(prompts: Prompts, old: Config | undefined, discoverSkills: Wi
     : undefined;
 
   const config = validateConfig({ version: 1, source: { repository, branch, path: sourcePath }, target: { path: targetPath },
-    selection, direction, agents: chosenAgents, publication: { mode, branch: publicationBranch } });
-  prompts.note(summary(config), 'Configuration Summary');
+    direction, agents: chosenAgents, publication: { mode, branch: publicationBranch } });
+  prompts.note(summary(config, migrated), 'Configuration Summary');
   if (!answer(await prompts.confirm({ message: 'Save this configuration?', initialValue: false }))) throw new Cancelled();
-  return config;
+  return { config, skillsIgnore: migrated };
 }
 
 async function askAgents(prompts: Prompts, old: Config | undefined): Promise<string[]> {
@@ -107,13 +111,13 @@ function skipAgents(prompts: Prompts): string[] {
   return [];
 }
 
-function summary(config: Config): string {
+function summary(config: Config, migrated?: string[]): string {
   const publication = config.publication.branch ? `${config.publication.mode} → ${config.publication.branch}` : config.publication.mode;
   return [
     `Source:        ${maskCredentials(config.source.repository)} @ ${config.source.branch}`,
     `Source path:   ${config.source.path}`,
     `Project path:  ${config.target.path}`,
-    `Skills:        ${config.selection.join(', ')}`,
+    `Skills:        all except .skillsignore${migrated ? ` (writes .skillsignore with ${migrated.length} skill${migrated.length === 1 ? '' : 's'} from the saved selection)` : ''}`,
     `Direction:     ${config.direction}`,
     `Agents:        ${config.agents.length ? config.agents.join(', ') : 'none'}`,
     `Publication:   ${publication}`,

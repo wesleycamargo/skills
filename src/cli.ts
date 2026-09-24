@@ -8,7 +8,7 @@ import os from 'node:os';
 import { checkout, head, run } from './git.js';
 import { Config, configPath, loadConfig } from './config.js';
 import { CANCEL, clackPrompts } from './prompts.js';
-import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, readSkillDescription, sameFiles, saveState, State, tryMerge } from './sync.js';
+import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, readSkillDescription, readSkillsIgnore, resolveSkills, sameFiles, saveState, State, tryMerge } from './sync.js';
 import { runWizard, SkillInfo } from './wizard.js';
 
 const root = process.cwd();
@@ -19,6 +19,9 @@ const publish = flags.has('--publish');
 const require = createRequire(import.meta.url);
 
 let cancelled = false;
+
+/** Configuration with the managed skills resolved for this run. */
+type Resolved = Config & { selection: string[] };
 
 async function locateAgentSkillDirs(dir: string, prefix = ''): Promise<string[]> {
   const found: string[] = [];
@@ -33,7 +36,7 @@ async function locateAgentSkillDirs(dir: string, prefix = ''): Promise<string[]>
   return found;
 }
 
-async function installAgents(config: Config, sourceRoot: string): Promise<void> {
+async function installAgents(config: Resolved, sourceRoot: string): Promise<void> {
   if (!config.agents.length) return;
   if (config.target.path !== '.agents/skills') throw new Error('Agent installation currently requires target.path=.agents/skills');
   const stage = await mkdtemp(path.join(os.tmpdir(), 'skills-install-'));
@@ -78,9 +81,12 @@ async function init(): Promise<void> {
   try { old = await loadConfig(root); }
   catch (error) { if (!(error as Error).message.startsWith('No .agents/skills-sync.json')) throw error; }
   clackPrompts.intro('skills-sync');
-  const result = await runWizard(clackPrompts, { old, discoverSkills });
+  const ignoreFile = path.join(root, '.skillsignore');
+  const skillsIgnore = { exists: await stat(ignoreFile).then(() => true, () => false), patterns: await readSkillsIgnore(root) };
+  const result = await runWizard(clackPrompts, { old, discoverSkills, projectSkills: targetPath => discover(root, targetPath), skillsIgnore });
   if ('cancelled' in result) { clackPrompts.cancel('Setup cancelled'); return; }
   await mkdir(path.dirname(configPath(root)), { recursive: true });
+  if (result.skillsIgnore?.length) await writeFile(ignoreFile, `# Skills that skills-sync does not manage (migrated from the saved selection).\n${result.skillsIgnore.join('\n')}\n`, { flag: 'wx' });
   await writeFile(configPath(root), JSON.stringify(result.config, null, 2) + '\n');
   clackPrompts.log.info(`Saved ${configPath(root)}. Initial sync will preview selected skill changes.`);
   await execute();
@@ -110,7 +116,8 @@ async function openSource(config: Config): Promise<{ dir: string; cleanup: () =>
     const branch = await run('git', ['symbolic-ref', '--short', 'HEAD'], dir);
     if (branch !== config.source.branch) throw new Error(`Local-commit mode requires the source checkout on ${config.source.branch}; it is on ${branch}`);
     if (cmd !== 'status' && cmd !== 'diff') {
-      const dirty = await run('git', ['status', '--porcelain', '--', ...config.selection.map(skill => `${config.source.path}/${skill}`)], dir);
+      const paths = config.selection ? config.selection.map(skill => `${config.source.path}/${skill}`) : [config.source.path];
+      const dirty = await run('git', ['status', '--porcelain', '--', ...paths], dir);
       if (dirty) throw new Error('Commit or stash existing source skill changes before syncing in local-commit mode');
     }
     return { dir, cleanup: async () => {}, localCommit: true };
@@ -127,7 +134,7 @@ async function ensurePullRequest(dir: string, branch: string, base: string): Pro
   if (!existing) await run('gh', ['pr', 'create', '--head', branch, '--base', base, '--title', 'Sync selected skills', '--body', 'Synchronize configured skills from a project.'], dir);
 }
 
-async function reconcilePending(state: State, config: Config, sourceDir: string): Promise<void> {
+async function reconcilePending(state: State, config: Resolved, sourceDir: string): Promise<void> {
   const pending = state.pending;
   if (!pending) return;
   if (pending.branch !== config.publication.branch) throw new Error('Pending publication branch differs from configuration; resolve it before changing branches.');
@@ -161,7 +168,7 @@ async function replaceSkillFiles(dir: string, directory: string, skill: string, 
   for (const [file, content] of Object.entries(desired)) await applyFile(dir, directory, { skill, file, kind: 'pull', source: content }, 'local', false);
 }
 
-async function publication(dir: string, config: Config, original: string, pending?: State['pending']): Promise<void> {
+async function publication(dir: string, config: Resolved, original: string, pending?: State['pending']): Promise<void> {
   const mode = config.publication.mode;
   if (mode === 'pull-request') {
     if (!/github\.com[:/][^/]+\/[^/]+(?:\.git)?$/.test(config.source.repository)) throw new Error('Pull request mode requires a GitHub source repository');
@@ -226,15 +233,33 @@ async function publication(dir: string, config: Config, original: string, pendin
   }
 }
 
+/** The saved selection, or every discovered skill not matched by .skillsignore. */
+async function resolveConfig(config: Config, sourceDir: string, state: State): Promise<Resolved> {
+  if (config.selection) return { ...config, selection: config.selection };
+  const { skills, skipped, invalid } = resolveSkills({
+    source: await discover(sourceDir, config.source.path),
+    project: await discover(root, config.target.path),
+    baseline: [...Object.keys(state.skills), ...Object.keys(state.pending?.skills ?? {})],
+    ignore: await readSkillsIgnore(root),
+    direction: config.direction,
+  });
+  for (const skill of invalid) console.log(`Skipping ${skill}: not a valid skill directory name.`);
+  for (const { skill, side } of skipped) console.log(side === 'project'
+    ? `Skipping ${skill}: only in the project, and pull-only projects never publish. Add it to .skillsignore to silence this.`
+    : `Skipping ${skill}: only in the source, and push-only projects never pull. Add it to .skillsignore to silence this.`);
+  return { ...config, selection: skills };
+}
+
 async function execute(): Promise<void> {
-  const config = await loadConfig(root);
-  if (cmd === 'pull' && config.direction === 'push') throw new Error('Project is configured push-only');
-  if (cmd === 'push' && config.direction === 'pull') throw new Error('Project is configured pull-only');
-  const source = await openSource(config);
+  const saved = await loadConfig(root);
+  if (cmd === 'pull' && saved.direction === 'push') throw new Error('Project is configured push-only');
+  if (cmd === 'push' && saved.direction === 'pull') throw new Error('Project is configured pull-only');
+  const source = await openSource(saved);
   let keepCheckout = false;
   try {
     const original = await head(source.dir);
-    const state = await loadState(root, config);
+    const state = await loadState(root, saved);
+    const config = await resolveConfig(saved, source.dir, state);
     await reconcilePending(state, config, source.dir);
     const changes: Change[] = [];
     for (const skill of config.selection) {
