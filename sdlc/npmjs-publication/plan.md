@@ -79,7 +79,7 @@ Depends on: Tasks 1, 2, and 4
 - [ ] Run the release path a second time or its equivalent version check to prove that the existing npmjs version is skipped rather than republished.
 
 Validation:
-- A clean consumer installation succeeds without GitHub Packages configuration; the executable resolves; npmjs reports the intended scoped version; an existing version results in a safe skip.
+- `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs rejected the direct publication before creating `0.1.2` because the current login did not satisfy the account's 2FA publishing requirement; a follow-up `npm view` confirmed the version remains absent. `npm pkg fix` normalized the repository field and its follow-up commit `3499c44` was pushed. A clean consumer installation and existing-version skip check remain pending successful publication.
 
 ### Task 6 — Record outcomes and hand off for independent validation
 Status: pending
@@ -106,6 +106,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — validate and publish the authorized under-validation npmjs evaluation release.
-Next: Create a scoped release commit that excludes unrelated worktree changes, push it normally, publish `0.1.2` through the existing npm login, then run a clean consumer install.
-Blockers: The existing `skills-sync-release-validation` work item still records outstanding authenticated-policy and Windows evidence; this blocks a stable/general-availability release, not the approved `0.1.2` evaluation release.
+Current: Task 5 — the npmjs evaluation release is built, committed, and ready, but unpublished.
+Next: Enable npm publishing 2FA, refresh the local npm login, then rerun the version check, publication, and clean consumer install.
+Blockers: npm rejected the current local login with HTTP 403 because it lacks a 2FA-approved publishing credential. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved `0.1.2` evaluation release.
