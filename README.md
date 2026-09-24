@@ -13,9 +13,30 @@ Requires Node.js 22.20.0 or later, matching the pinned upstream `skills` CLI dep
 
 The CLI stores no credentials. Git and `gh` use your existing local authentication.
 
-## Install from a built package
+## Install
 
-On every push to `main`, CI publishes the package to the GitHub Packages npm registry (`npm.pkg.github.com`), scoped to this repository — not the public npmjs.org registry, and still gated by GitHub read access to this package. Installing from there requires an authenticated `.npmrc` pointing at `https://npm.pkg.github.com`. For local validation, build a tarball and install it into a disposable project instead:
+CI publishes each new version to the GitHub Packages npm registry (`npm.pkg.github.com`), not npmjs.org. The package is public, but GitHub Packages still requires a token to install it: a classic personal access token with the `read:packages` scope.
+
+From your project's root directory, run the setup script from a copy of this repository:
+
+```sh
+/path/to/skills/scripts/setup-skills-sync.sh
+```
+
+It checks for Node.js 22.20.0 or later, uses an existing npm login or `NODE_AUTH_TOKEN` if one works and otherwise asks for a token, saves the token in your user npm config (never in the project), adds the `@wesleycamargo` registry line to the project's `.npmrc`, installs the package as a dev dependency, and starts the setup wizard. Use `--global` to install globally, `--version <version>` to pick a version, and `--no-init` to skip the wizard.
+
+To set it up by hand instead, log in once, point the scope at GitHub Packages, and install:
+
+```sh
+npm login --scope=@wesleycamargo --auth-type=legacy --registry=https://npm.pkg.github.com
+echo "@wesleycamargo:registry=https://npm.pkg.github.com" >> .npmrc
+npm install --save-dev @wesleycamargo/skills-sync
+npx skills-sync init
+```
+
+### Install from a built package
+
+For local validation, build a tarball and install it into a disposable project:
 
 ```sh
 npm ci
@@ -24,7 +45,7 @@ npm run build
 npm pack
 
 cd /path/to/project
-npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.0.tgz
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.1.tgz
 npx skills-sync init
 ```
 

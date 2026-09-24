@@ -1,13 +1,13 @@
 {
   "name": "@wesleycamargo/skills-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "repository": "github:wesleycamargo/skills",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "bin": {
-    "skills-sync": "./dist/cli.js"
+    "skills-sync": "dist/cli.js"
   },
   "files": [
     "dist",
