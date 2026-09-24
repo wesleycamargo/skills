@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyFile, formatDiff, planSkill, tryMerge } from './sync.js';
+import { applyFile, formatDiff, planSkill, readSkillDescription, tryMerge } from './sync.js';
 import { mkdtemp, mkdir, symlink, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,4 +43,21 @@ test('refuses to write through a symlink in the target path', async t => {
   const change = { skill: 'example', file: 'SKILL.md', source: Buffer.from('content').toString('base64'), kind: 'pull' as const };
   await assert.rejects(() => applyFile(root, 'linked', change, 'local', false), /symlink/i);
   assert.deepEqual(await import('node:fs/promises').then(fs => fs.readdir(path.join(root, 'outside'))), []);
+});
+
+test('reads a single-line skill description without following symlinks', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-desc-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const write = async (skill: string, text: string) => { await mkdir(path.join(root, 'skills', skill), { recursive: true }); await writeFile(path.join(root, 'skills', skill, 'SKILL.md'), text); };
+  await write('plain', '---\nname: plain\ndescription: Formats commit messages\n---\nbody\n');
+  await write('quoted', '---\ndescription: "Quoted: text"\n---\n');
+  await write('folded', '---\ndescription: >\n  spans lines\n---\n');
+  await write('none', '# No frontmatter\ndescription: not frontmatter\n');
+  await mkdir(path.join(root, 'skills', 'linked'));
+  await symlink(path.join(root, 'skills', 'plain', 'SKILL.md'), path.join(root, 'skills', 'linked', 'SKILL.md'));
+  assert.equal(await readSkillDescription(root, 'skills', 'plain'), 'Formats commit messages');
+  assert.equal(await readSkillDescription(root, 'skills', 'quoted'), 'Quoted: text');
+  assert.equal(await readSkillDescription(root, 'skills', 'folded'), undefined);
+  assert.equal(await readSkillDescription(root, 'skills', 'none'), undefined);
+  assert.equal(await readSkillDescription(root, 'skills', 'linked'), undefined);
 });

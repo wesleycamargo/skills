@@ -56,6 +56,18 @@ export async function discover(root: string, directory: string): Promise<string[
   return names.sort();
 }
 
+/** Single-line `description:` from a skill's SKILL.md frontmatter, for display only. Symlinks are not followed. */
+export async function readSkillDescription(root: string, directory: string, skill: string): Promise<string | undefined> {
+  let file: string;
+  try { file = path.join(root, directory, safePath(skill, 'skill'), 'SKILL.md'); } catch { return undefined; }
+  try { if (!(await lstat(file)).isFile()) return undefined; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(await readFile(file, 'utf8'))?.[1];
+  const value = frontmatter?.match(/^description:[ \t]*(.*?)[ \t]*$/m)?.[1];
+  if (!value || /^[|>]/.test(value)) return undefined;
+  return /^(["']).*\1$/.test(value) ? value.slice(1, -1) : value;
+}
+
 export async function inventory(root: string, directory: string, skill: string): Promise<Files> {
   safePath(skill, 'skill');
   await assertNoSymlinkPath(root, `${directory}/${skill}`);
