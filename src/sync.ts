@@ -7,7 +7,10 @@ import path from 'node:path';
 import { Config, safePath } from './config.js';
 
 export type Files = Record<string, string>;
-export interface State { version: 1; repository: string; branch: string; sourcePath: string; targetPath: string; skills: Record<string, Files> }
+export interface State {
+  version: 1; repository: string; branch: string; sourcePath: string; targetPath: string; skills: Record<string, Files>;
+  pending?: { branch: string; baseRevision: string; skills: Record<string, Files> };
+}
 export type Change = { skill: string; file: string; before?: string; source?: string; local?: string; merged?: string; kind: 'pull' | 'push' | 'merge' | 'delete' | 'conflict' | 'same' };
 const stateFile = (root: string) => path.join(root, '.agents', 'skills-sync-state.json');
 
@@ -46,7 +49,7 @@ export async function discover(root: string, directory: string): Promise<string[
   try { entries = await readdir(path.join(root, directory), { withFileTypes: true }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
   const names: string[] = [];
-  for (const entry of entries) if (entry.isDirectory() && /^[\w-]+$/.test(entry.name)) {
+  for (const entry of entries) if (entry.isDirectory() && entry.name.trim() !== '' && !/[\\/\0-\x1f\x7f]/.test(entry.name)) {
     try { if ((await lstat(path.join(root, directory, entry.name, 'SKILL.md'))).isFile()) names.push(entry.name); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
@@ -57,6 +60,12 @@ export async function inventory(root: string, directory: string, skill: string):
   safePath(skill, 'skill');
   await assertNoSymlinkPath(root, `${directory}/${skill}`);
   return walk(path.join(root, directory, skill));
+}
+
+export function sameFiles(left: Files | undefined, right: Files | undefined): boolean {
+  if (!left || !right) return left === right;
+  const a = Object.keys(left).sort(), b = Object.keys(right).sort();
+  return a.length === b.length && a.every((key, index) => key === b[index] && left[key] === right[key]);
 }
 
 async function assertNoSymlinkPath(root: string, relative: string): Promise<void> {
