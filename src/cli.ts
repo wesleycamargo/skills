@@ -59,6 +59,11 @@ async function ensureFresh(dir: string, original: string, branch: string): Promi
   if (await run('git', ['rev-parse', `origin/${branch}`], dir) !== original) throw new Error('Source branch advanced. Run status and retry; no publication was attempted.');
 }
 
+async function ensurePullRequest(dir: string, branch: string, base: string): Promise<void> {
+  const existing = await run('gh', ['pr', 'list', '--head', branch, '--base', base, '--json', 'number', '--jq', '.[0].number // empty'], dir);
+  if (!existing) await run('gh', ['pr', 'create', '--head', branch, '--base', base, '--title', 'Sync selected skills', '--body', 'Synchronize configured skills from a project.'], dir);
+}
+
 async function publication(dir: string, config: Config, original: string): Promise<void> {
   const mode = config.publication.mode;
   const changed = await run('git', ['status', '--porcelain'], dir);
@@ -73,6 +78,7 @@ async function publication(dir: string, config: Config, original: string): Promi
       const differences = await run('git', ['diff', '--name-only', `FETCH_HEAD`, '--', config.source.path], dir);
       if (!differences) {
         console.log(`Existing ${config.publication.branch} already contains the selected content.`);
+        if (mode === 'pull-request') await ensurePullRequest(dir, config.publication.branch!, config.source.branch);
         return;
       }
       throw new Error(`Publication branch ${config.publication.branch} has other content; inspect it before updating.`);
@@ -86,8 +92,7 @@ async function publication(dir: string, config: Config, original: string): Promi
   if (mode === 'pull-request') {
     const url = config.source.repository;
     if (!/github\.com[:/][^/]+\/[^/]+(?:\.git)?$/.test(url)) throw new Error('Pull request mode currently requires a GitHub remote');
-    const existing = await run('gh', ['pr', 'list', '--head', branch, '--base', config.source.branch, '--json', 'number', '--jq', '.[0].number // empty'], dir);
-    if (!existing) await run('gh', ['pr', 'create', '--head', branch, '--base', config.source.branch, '--title', 'Sync selected skills', '--body', 'Synchronize configured skills from a project.'], dir);
+    await ensurePullRequest(dir, branch, config.source.branch);
   }
 }
 
