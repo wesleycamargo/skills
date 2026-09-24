@@ -57,6 +57,8 @@ For example, `[patch] Replace wizard text defaults instead of appending to them`
   - one `[major]` commit among others;
   - several markers in one subject;
   - merge commits only;
+  - `[skip ci]` release commits only;
+  - npmjs ahead of the highest tag (tag recovery);
   - repeated prereleases on one branch;
   - no commits since the last release.
 - A run with no new commits since the last release does not publish a duplicate.
@@ -65,16 +67,17 @@ For example, `[patch] Replace wizard text defaults instead of appending to them`
 
 ## Open Questions
 
-- Are prereleases tagged too, or does the prerelease number `N` come from the `beta` versions already on npmjs? The specification decides; stable releases are always tagged.
-- If the tag push fails after npm has published, how does the next run avoid bumping again from the old tag? The specification must define this recovery, for example by also checking the latest version on npmjs.
-- Should a push whose new commits are all `[skip ci]` release commits count as having no changes?
+None.
 
 ## Decisions
 
 - **2026-09-24:** releases are recorded as Git tags only.
 - **2026-09-24:** the bump comes from `[major]`, `[minor]`, and `[patch]` markers in commit subjects. `major` beats `minor`, and `minor` beats `patch`. A commit with no marker counts as minor, and merge commits are ignored. Pull requests are not used yet.
 - **Assumption:** the automation is a small script using Node.js built-ins and `git log`.
+- **2026-09-24, prereleases are not tagged:** only stable releases get `v<version>` tags, so the starting point for the next stable release is always the highest tag. The prerelease number `N` in `<next>-beta.N` is one more than the highest `beta` number already on npmjs for that base version, starting at `0`. For example, if npmjs has `0.4.0-beta.0` and `0.4.0-beta.1`, the next prerelease is `0.4.0-beta.2`. npmjs is where prereleases are published, so it is the reliable source of their numbers.
+- **2026-09-24, recovery when the tag is missing:** before computing a version, the run compares the highest stable tag with the highest stable version on npmjs. If npmjs is ahead, the tag push failed on an earlier run. The run then tags the commit that npmjs records in that version's `gitHead` field, and starts from that version. This means a failed tag push never causes the same change to be bumped and published twice. If `gitHead` is missing or not in the repository, the run fails without publishing and explains how to add the tag by hand.
+- **2026-09-24, `[skip ci]` commits are ignored:** like merge commits, commits whose subject contains `[skip ci]` do not count toward the bump. These are the hand-made "Prepare npmjs release" commits. A push that only has ignored commits since the last tag does not publish.
 
 ## Handoff
 
-Review this intent and resolve the open questions. `npm-default-publication` has an approved intent and specification but no workflow implementation yet. Create `sdlc/semver-release-bump/spec.md` with `sdlc-create-spec`, and implement it after, or together with, the `npm-default-publication` workflow changes.
+The intent is ready for approval. `npm-default-publication` has an approved intent and specification but no workflow implementation yet. Create `sdlc/semver-release-bump/spec.md` with `sdlc-create-spec`, and implement it after, or together with, the `npm-default-publication` workflow changes.
