@@ -30,3 +30,5 @@ Report:
 - **Blocked** when required information, dependencies, or capabilities prevent completion, with the unblock condition.
 
 Include validated requirements, checks and results, unresolved gaps, remaining work, and readiness for human review. If findings reveal incomplete or wrongly completed tasks, correct plan status and handover, then hand off to sdlc-execute-plan. A passed result is ready for final human review.
+
+On a **Passed** result, refresh the Testing section of `sdlc/<work-item>/pr-summary.md` with the validation evidence when that file exists, then hand off to sdlc-create-pull-request to open the PR.

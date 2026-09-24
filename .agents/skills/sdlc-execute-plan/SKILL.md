@@ -32,6 +32,10 @@ Remaining validation: <pending evidence>
 
 Do not log routine commands or duplicate Git history. Do not overwrite another agent work. Distinguish required current-scope work from optional improvements, technical debt, and future follow-up. Add only required work that does not change approved requirements; record significant deviations. Return for artifact review when a discovery changes scope or specification.
 
+## Reviewer-facing pull-request summary
+
+Alongside plan.md, create and maintain `sdlc/<work-item>/pr-summary.md` as tasks complete. It is the reviewer-facing narrative that sdlc-create-pull-request will publish, distinct from the plan.md `## Handover` working state. Keep its Summary, Changes, and Testing sections current after meaningful milestones so opening the PR is a no-surprise step; do not defer it to the end. Its first line is the PR title; the rest is the PR body (see the sdlc-create-pull-request skill for the template). When work is done without this file, sdlc-create-pull-request can reconstruct it post-implementation instead.
+
 ## Handoff
 
-When implementation tasks are completed with task-level validation, hand off to sdlc-validate-implementation. Completion here is not a claim that final independent validation passed.
+When implementation tasks are completed with task-level validation, hand off to sdlc-validate-implementation, then to sdlc-create-pull-request to open the PR. Completion here is not a claim that final independent validation passed.
