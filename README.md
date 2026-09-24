@@ -34,9 +34,7 @@ npx --no-install skills-sync init
 
 Use the scoped name with npx. Unscoped `npx skills-sync` works only after the package is installed, because npm looks up package names, not command names.
 
-### GitHub Packages installation
-
-GitHub Packages remains available for existing consumers at `npm.pkg.github.com`. It requires a classic personal access token with the `read:packages` scope and an `@wesleycamargo` registry mapping.
+### Setup script
 
 From your project's root directory, run the setup script from a copy of this repository:
 
@@ -46,14 +44,17 @@ From your project's root directory, run the setup script from a copy of this rep
 
 It installs from npmjs without changing `.npmrc` or asking for a token. Use `--global` to install globally, `--version <version>` to pick a version, and `--no-init` to skip the wizard.
 
-To install from GitHub Packages by hand instead, log in once, point the scope at GitHub Packages, and install:
+### Prereleases
+
+Pushes to `feature/*` branches publish prereleases under the `beta` dist-tag. They never become `latest`:
 
 ```sh
-npm login --scope=@wesleycamargo --auth-type=legacy --registry=https://npm.pkg.github.com
-echo "@wesleycamargo:registry=https://npm.pkg.github.com" >> .npmrc
-npm install --save-dev @wesleycamargo/skills-sync
-npx --no-install skills-sync init
+npx --yes @wesleycamargo/skills-sync@beta status
 ```
+
+### Legacy GitHub Packages versions
+
+Versions up to `0.3.1` were also published to GitHub Packages at `npm.pkg.github.com`. No future releases are published there; install from npmjs instead.
 
 ### Install from a built package
 
@@ -66,7 +67,7 @@ npm run build
 npm pack
 
 cd /path/to/project
-npm install --save-dev /path/to/wesleycamargo-skills-sync-0.3.1.tgz
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.0.0-development.tgz
 npx --no-install skills-sync init
 ```
 
@@ -83,11 +84,12 @@ Setup needs an interactive terminal. For noninteractive use, commit or otherwise
 
 ## Publishing
 
-The release script prevents automatic retries of uncertain npmjs versions:
+The release workflow publishes to npmjs only, using npm trusted publishing with provenance:
 
-```sh
-NPM_OTP=<current-six-digit-code> bash scripts/publish-npm.sh
-```
+- a push to `feature/*` publishes a prerelease, such as `0.4.0-beta.0`, under the `beta` dist-tag;
+- a push to `main`, or a manual run of the workflow, publishes a stable version under `latest` and tags the released commit `v<version>`.
+
+Each run computes its version, tests, builds, and publishes. A run with nothing to release publishes nothing. The publish script checks that the version matches the channel, never republishes an existing version, and never retries an uncertain result. Release runs never overlap.
 
 ### Versioning
 
@@ -106,11 +108,20 @@ npm run release:preview
 npm run release:preview -- --channel beta
 ```
 
-Until the release workflow applies the computed version itself, set the previewed version in `package.json` and `package-lock.json` in a `[skip ci]` release commit, publish, and then tag the released commit with `node scripts/release-version.mjs tag <version>`.
+The committed `version` is always `0.0.0-development`. The workflow sets the real version only inside the release run, and the publish script refuses to publish the placeholder. Use `[skip ci]` in a commit subject to push without releasing.
 
 ### Publishing with an OTP
 
-Use the local OTP path only to bootstrap the first public version. Later npmjs releases use the manual npm workflow dispatch with npm trusted publishing and provenance. Configure the npm trusted publisher for this repository and workflow before using that path. The script skips an existing public version and stops on staged, 2FA, conflict, or uncertain registry results; resolve those npm states before another attempt.
+For an emergency local release, apply the computed version first and then publish with a one-time password:
+
+```sh
+node scripts/release-version.mjs apply
+NPM_OTP=<current-six-digit-code> bash scripts/publish-npm.sh
+node scripts/release-version.mjs tag <version>
+git checkout -- package.json package-lock.json
+```
+
+Use the local OTP path only when the workflow cannot run. The script skips an existing public version and stops on staged, 2FA, conflict, or uncertain registry results; resolve those npm states before another attempt.
 
 ## Commands
 

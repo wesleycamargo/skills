@@ -17,6 +17,22 @@ PACKAGE="$(node -p "require('./package.json').name")"
 VERSION="$(node -p "require('./package.json').version")"
 [[ -n "$PACKAGE" && -n "$VERSION" ]] || fail "package.json must define name and version."
 
+# The channel selects the npm dist-tag; the version must match it before npm is asked to publish.
+CHANNEL="${RELEASE_CHANNEL:-latest}"
+case "$CHANNEL" in
+  latest | beta) ;;
+  *) fail "Unknown RELEASE_CHANNEL $CHANNEL; use latest or beta." ;;
+esac
+[[ "$VERSION" != 0.0.0-development ]] ||
+  fail "package.json version $VERSION was not computed; run node scripts/release-version.mjs apply --channel $CHANNEL first."
+if [[ "$CHANNEL" == latest ]]; then
+  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    fail "The latest channel needs a stable version like 1.2.3; package.json has $VERSION."
+else
+  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]] ||
+    fail "The beta channel needs a prerelease version like 1.2.4-beta.0; package.json has $VERSION."
+fi
+
 set +u
 actions_mode="$GITHUB_ACTIONS"
 otp="$NPM_OTP"
@@ -44,10 +60,10 @@ if [[ "$actions_mode" != true ]]; then
 fi
 publish() {
   if [[ "$actions_mode" == true ]]; then
-    npm publish --access public --provenance --registry="$REGISTRY" >"$publish_output" 2>&1
+    npm publish --access public --provenance --tag "$CHANNEL" --registry="$REGISTRY" >"$publish_output" 2>&1
   else
     [[ -n "$otp" ]] || fail "Local publication requires NPM_OTP from your current authenticator; do not pass an OTP as a command argument."
-    NPM_CONFIG_OTP="$otp" npm publish --access public --registry="$REGISTRY" >"$publish_output" 2>&1
+    NPM_CONFIG_OTP="$otp" npm publish --access public --tag "$CHANNEL" --registry="$REGISTRY" >"$publish_output" 2>&1
   fi
 }
 
@@ -67,11 +83,12 @@ if ! publish; then
   fail "npm publish failed; inspect the npm debug log, then re-check the registry before retrying."
 fi
 
-for attempt in 1 2 3; do
+# npmjs can take about a minute to serve a new version. Waiting only reads the registry; it never publishes again.
+for ((attempt = 1; attempt <= ${NPM_READ_ATTEMPTS:-12}; attempt++)); do
   if npm view "$PACKAGE@$VERSION" version --registry="$REGISTRY" >/dev/null 2>&1; then
-    printf 'Published %s@%s to npmjs.\n' "$PACKAGE" "$VERSION"
+    printf 'Published %s@%s to npmjs under %s.\n' "$PACKAGE" "$VERSION" "$CHANNEL"
     exit 0
   fi
-  sleep 2
+  sleep "${NPM_READ_DELAY:-10}"
 done
 fail "npm accepted the publish request but the version is not yet readable; do not retry automatically."

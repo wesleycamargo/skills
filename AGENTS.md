@@ -5,7 +5,7 @@
 - This repository contains the `@wesleycamargo/skills-sync` TypeScript CLI and existing skills.
 - Keep the CLI changes focused on the approved v1 behavior. Automating the sync CLI itself via GitHub Actions is out of scope for v1 and tracked separately in `sdlc/skills-sync-github-actions/`.
 - The CLI is still under validation. Do not describe it as generally available or ready for important repositories until the release checks are complete.
-- `.github/workflows/publish-package.yml` is release/build infrastructure (builds, tests, and publishes the package to the GitHub Packages registry). It is separate from, and does not fulfill, the out-of-scope sync-automation item above.
+- `.github/workflows/publish-package.yml` is release/build infrastructure: it tests, builds, and publishes the package to npmjs only (`beta` prereleases from `feature/*`, `latest` from `main` and manual runs). It is separate from, and does not fulfill, the out-of-scope sync-automation item above.
 
 ## Build and test
 
@@ -36,7 +36,7 @@
 
 ## Versioning
 
-- Mark every commit subject with `[major]`, `[minor]`, or `[patch]`; an unmarked commit counts as minor, and merge and `[skip ci]` commits do not count. `npm run release:preview` shows the next version. Until the workflow applies it (see `sdlc/semver-release-bump/`), set that version in `package.json` and `package-lock.json` in a `[skip ci]` release commit, and tag the released commit with `node scripts/release-version.mjs tag <version>`.
+- Mark every commit subject with `[major]`, `[minor]`, or `[patch]`; an unmarked commit counts as minor, and merge and `[skip ci]` commits do not count. `npm run release:preview` shows the next version. The workflow computes and applies it; keep the committed `version` at `0.0.0-development` and never bump it by hand.
 
 ## Dependencies and package metadata
 
