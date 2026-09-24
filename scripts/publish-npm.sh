@@ -58,6 +58,9 @@ if ! publish; then
   if grep -q 'EOTP' "$publish_output"; then
     fail "npmjs requires an interactive OTP. Set NPM_OTP locally, or configure npm trusted publishing for GitHub Actions."
   fi
+  if [[ "$actions_mode" == true ]] && grep -Eq 'E401|E403|ENEEDAUTH' "$publish_output"; then
+    fail "npm rejected GitHub Actions trusted publishing. Verify its owner, repository, workflow filename, and permission for direct npm publish; do not retry until corrected."
+  fi
   fail "npm publish failed; inspect the npm debug log, then re-check the registry before retrying."
 fi
 

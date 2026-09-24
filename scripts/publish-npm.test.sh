@@ -49,6 +49,7 @@ case "$1" in
   publish)
     if [[ "$publish_result" == e409 ]]; then echo E409 >&2; exit 1; fi
     if [[ "$publish_result" == eotp ]]; then echo EOTP >&2; exit 1; fi
+    if [[ "$publish_result" == e403 ]]; then echo E403 >&2; exit 1; fi
     touch "$MOCK_PUBLISHED_MARKER"
     ;;
 esac
@@ -101,6 +102,13 @@ conflict_case() {
     test "$(grep -c '^publish' "$fixture/log")" -eq 1
 }
 
+trusted_publisher_rejection_case() {
+  local fixture="$1"
+  ! run_script "$fixture" env MOCK_VIEW=missing GITHUB_ACTIONS=true MOCK_PUBLISH=e403 &&
+    grep -Fq 'npm rejected GitHub Actions trusted publishing' "$fixture/output" &&
+    test "$(grep -c '^publish' "$fixture/log")" -eq 1
+}
+
 fixture="$TMP/published"
 make_fixture "$fixture"
 check 'published version skips npm publish' published_case "$fixture"
@@ -124,6 +132,10 @@ check 'staged version does not publish again' staged_case "$fixture"
 fixture="$TMP/conflict"
 make_fixture "$fixture"
 check 'publish conflict does not retry' conflict_case "$fixture"
+
+fixture="$TMP/trusted-publisher-rejection"
+make_fixture "$fixture"
+check 'trusted-publisher rejection has a safe remediation' trusted_publisher_rejection_case "$fixture"
 
 printf '%s passed; %s failed.\n' "$pass" "$fail"
 test "$fail" -eq 0
