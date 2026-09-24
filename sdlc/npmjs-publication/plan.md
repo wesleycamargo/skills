@@ -72,14 +72,16 @@ Depends on: Tasks 1, 2, and 4
 
 - The first publication is the authorized under-validation evaluation release `0.1.5`; a stable/general-availability release still depends on completed review of `sdlc/skills-sync-release-validation`.
 
-- [ ] Run final local package checks with the supported Node.js version: `npm ci`, `npm test`, `npm run build`, and `npm pack --dry-run`.
-- [ ] Publish the approved new version to npmjs through the configured release path; do not use an ad hoc token-bearing command line.
+- [x] Run final local package checks with the supported Node.js version: `npm ci`, `npm test`, `npm run build`, and `npm pack --dry-run`.
+- [x] Publish the approved new version to npmjs through the configured release path; do not use an ad hoc token-bearing command line.
 - [ ] In a new temporary consumer directory with default npm registry settings, install the exact published version and run `npx --no-install skills-sync --help`.
-- [ ] Query npmjs for the exact published version and inspect its public metadata without exposing credentials.
-- [ ] Run the release path a second time or its equivalent version check to prove that the existing npmjs version is skipped rather than republished.
+- [x] Query npmjs for the exact published version and inspect its public metadata without exposing credentials.
+- [x] Run the release path a second time or its equivalent version check to prove that the existing npmjs version is skipped rather than republished.
 
 Validation:
 - `npm test` passed and `npm pack --dry-run --json` listed the 10 intended production files. On 2026-09-24, npmjs initially rejected direct publication because the current login did not satisfy its 2FA policy. Browser-approval flows reserved `0.1.2` and `0.1.3`, but npm's read endpoint and clean installation returned 404 for both; package access reports the package as public with read-write access. npm will not permit either version to be reused, so this task continues with `0.1.4`. `npm pkg fix` normalized the repository field and follow-up commit `3499c44` was pushed. The isolated `0.1.4` worktree passed all 20 tests and packed 10 production files, but npm then returned HTTP 409 saying `0.1.4` was previously staged. `npm stage list` returned no stage ID, so a maintainer must inspect npmjs's Staged Packages page before another write. A clean consumer installation and existing-version skip check remain pending.
+
+- Completed 2026-09-24: trusted publishing was correctly configured, but the release runner supplied npm 10.9.3. npm trusted publishing requires npm 11.5.1+, so the workflow now installs npm 11.5.1 before its npmjs job. The retry accepted and published `@wesleycamargo/skills-sync@0.1.5`; public metadata reports latest `0.1.5`, the expected repository URL, and Node `>=22.20.0`. A clean, built archive packed 10 production files, and a second script invocation safely skipped the existing public version. A clean default-registry installation succeeded, but `npx --no-install skills-sync --help` printed `Unknown command --help`; leave the consumer-execution checklist item open and fix that CLI contract only in a subsequent version.
 
 ### Task 6 — Record outcomes and hand off for independent validation
 Status: pending
@@ -106,6 +108,6 @@ With Node.js 22.20.0 or later, run `npm ci`, `npm test`, `npm run build`, and `n
 
 ## Handover
 
-Current: Task 5 — release automation is complete; `0.1.5` is the next unreserved evaluation candidate.
-Next: Push `0.1.5` and dispatch the npm-only workflow through configured trusted publishing. Use `scripts/publish-npm.sh` for local OTP bootstrap only; it will not retry uncertain versions.
-Blockers: Versions `0.1.2` through `0.1.4` remain unavailable after interrupted npm flows. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, not the approved evaluation release.
+Current: Task 5 — npmjs evaluation release `0.1.5` is public and the release script safely skips it on a repeat invocation.
+Next: Create approved follow-up artifacts for the published CLI’s missing `--help` contract, release the correction as a new version, then complete its clean-consumer command check.
+Blockers: `0.1.5` must not be republished. The existing `skills-sync-release-validation` work item still blocks a stable/general-availability release, and the clean-consumer `--help` acceptance check remains open.
