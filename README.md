@@ -1,19 +1,90 @@
 # Skills Sync (development branch)
 
-This repository contains an early implementation of `@wesleycamargo/skills-sync` alongside the existing `skills/write-for-me` skill. The CLI is not yet ready for general use or npm publication. See `sdlc/skills-sync/spec.md` and `plan.md` for the v1 contract.
+This repository contains an early implementation of `@wesleycamargo/skills-sync` alongside the existing `skills/write-for-me` skill. The CLI is not yet ready for general use or for important repositories until release validation completes. See `sdlc/skills-sync/spec.md` and `plan.md` for the v1 contract.
 
-## Try it with disposable Git repositories
+Requires Node.js 22.20.0 or later, matching the pinned upstream `skills` CLI dependency.
+
+## Requirements
+
+- Node.js 22.20.0 or later
+- npm, Git, and read access to the configured source repository
+- Write access only for publication modes that write the source
+- An authenticated `gh` CLI for `pull-request` mode with a GitHub source
+
+The CLI stores no credentials. Git and `gh` use your existing local authentication.
+
+## Install from a built package
+
+On every push to `main`, CI publishes the package to the GitHub Packages npm registry (`npm.pkg.github.com`), scoped to this repository — not the public npmjs.org registry, and still gated by GitHub read access to this package. Installing from there requires an authenticated `.npmrc` pointing at `https://npm.pkg.github.com`. For local validation, build a tarball and install it into a disposable project instead:
 
 ```sh
 npm ci
 npm test
 npm run build
-node dist/cli.js init
-node dist/cli.js status
+npm pack
+
+cd /path/to/project
+npm install --save-dev /path/to/wesleycamargo-skills-sync-0.1.0.tgz
+npx skills-sync init
 ```
 
-The wizard saves `.agents/skills-sync.json`, imports the selected skills, and installs selected agent copies through the pinned upstream `skills` CLI. `status` summarizes changes; `diff` shows text diffs without writing. `sync --yes` applies source-only changes. To publish project edits, review `diff`, then run `sync --yes --publish` with a publication mode configured in the wizard. Publishing uses your existing Git credentials. Pull request mode also requires the `gh` CLI to be authenticated.
+The interactive wizard asks for the source repository and branch, source and project skill directories, selected skills, direction, optional agent targets, and publication mode. It shows the resulting configuration before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices.
 
-The current implementation refuses conflicting edits and deletion proposals by default. To adopt a pre-existing skill, choose `--adopt-source=skill` or `--adopt-project=skill`; review the preview before confirming. An individual deletion may be selected with `--delete=skill/file`. `override-main` additionally requires `--yes --override-main --override-target=<source repository>@<branch>` on each run. It uses a normal Git commit and never force-pushes. `local-commit` requires `source.repository` to be a local checkout on the configured branch.
+For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. A missing or invalid configuration fails with a concise next action instead of prompting.
 
-**Work still required before v1 release:** verify pull request creation and updates against GitHub, test all publication modes and failure recovery more broadly, run the workflow on Windows and macOS, and finish configuration, recovery, and onboarding documentation. The current three-way merge handles compatible UTF-8 text and refuses binary or overlapping edits. Do not use this branch to synchronize important repositories yet.
+## Commands
+
+Run these from the configured project directory:
+
+```sh
+npx skills-sync status
+npx skills-sync diff
+npx skills-sync pull --yes
+npx skills-sync push --yes --publish
+npx skills-sync sync --yes
+npx skills-sync sync --yes --publish
+```
+
+`status` summarizes planned changes and `diff` shows content differences without writes. `pull`, `push`, and `sync` show their change preview before applying it; `--yes` supplies the explicit noninteractive confirmation. `--publish` is separately required before a project-side change may write the source. The configured `pull` and `push` directions prevent reverse writes.
+
+Synchronization always uses the configured project copy under `.agents/skills` (or the configured target path). Optional agent copies are installed only after synchronization safety checks succeed; an edited agent copy is never overwritten silently.
+
+## Publication modes
+
+| Mode | Destination and requirements |
+| --- | --- |
+| `local-commit` | Creates a normal commit in a local source checkout on the configured branch; never pushes. |
+| `branch` | Pushes selected skill changes to the configured non-source branch. |
+| `pull-request` | Pushes a configured branch and creates or updates one GitHub pull request. Requires `gh auth status` to succeed. |
+| `main` | Pushes a normal commit directly to the configured source branch. GitHub branch rules and write permission still apply. |
+| `override-main` | Replaces conflicting content only inside selected skills through a normal commit. It never force-pushes or rewrites history. |
+
+For `override-main`, review the replacement preview and supply all confirmations on every noninteractive run:
+
+```sh
+npx skills-sync sync --yes --publish --override-main \
+  --override-target=<source-repository>@<source-branch>
+```
+
+## Conflicts, deletions, and recovery
+
+The CLI records a portable per-skill baseline in `.agents/skills-sync-state.json`. It carries one-sided edits, attempts compatible text merges, and leaves overlapping or binary changes for manual resolution. It does not silently adopt an existing project skill; choose an explicit side instead:
+
+```sh
+npx skills-sync sync --yes --adopt-source=<skill>
+npx skills-sync sync --yes --adopt-project=<skill>
+```
+
+Deletions are proposals, not automatic actions. Review the preview, then confirm each selected file explicitly:
+
+```sh
+npx skills-sync sync --yes --publish --delete=<skill>/<file>
+```
+
+Branch and pull-request publication can remain pending until the source branch accepts the change. Do not delete the state file to bypass this condition: after the branch or PR is merged, run `sync --yes` to reconcile the pending publication. If the source advances while the CLI is preparing publication, it stops without publishing stale content; review `status` or `diff` and retry from the refreshed comparison.
+
+## Scope and validation status
+
+GitHub Actions workflow generation and automation are outside v1. This repository is still under validation: do not use this CLI to synchronize important repositories or describe it as generally available until the remaining release checks complete.
+
+**Work still required before v1 release:** complete the protected-branch or limited-permission check and Windows validation, then perform final independent review. The current three-way merge handles compatible UTF-8 text and refuses binary or overlapping edits.

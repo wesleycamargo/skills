@@ -1,8 +1,11 @@
 {
   "name": "@wesleycamargo/skills-sync",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "repository": "github:wesleycamargo/skills",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "bin": {
     "skills-sync": "./dist/cli.js"
   },
@@ -11,7 +14,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.20.0"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
