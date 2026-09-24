@@ -1,0 +1,259 @@
+---
+description: Gemeente Den Haag Design Authority — BIO 2.0, MCSB, BIV, identity, STRIDE, secure coding, pipelines
+globs: wiki/**/*.md,**/*.bicep,**/*.ps1,**/*.yml,**/*.yaml,**/*.jsonc,**/deployment-patterns/**
+alwaysApply: false
+---
+
+# Security — Design Authority (Gemeente Den Haag / BIO 2.0)
+
+Sources: [MCSB](https://learn.microsoft.com/security/benchmark/azure/overview) · [BIO 2.0](https://www.bio-overheid.nl/) · [Azure security baseline](https://learn.microsoft.com/security/benchmark/azure/overview)
+
+Defence-in-depth order: **identity → network → compute → data → monitoring**.
+
+## Generated code readability (all languages)
+
+- **No double dashes (`--`)** or em dashes in generated code/comments; use `#`, `//`, or help blocks.
+- **Comment each security-relevant block** (identity, network, encryption, logging): what it enforces and which MCSB/BIO theme it supports.
+- Flag intentional exceptions with `# ADR-NNNN` or `# CISO exception` in IaC comments.
+
+## BIV / BIO 2.0 classification
+
+- Classify with **BIV**: Vertrouwelijkheid (C), Integriteit (I), Beschikbaarheid (A) = CIA.
+- Levels: **Laag / Midden / Hoog** only. Default **Midden** when unsure; confirm Laag/Midden with Data Owner and **CISO delegate**.
+- **Hoog BIV → CISO personally** (not delegable).
+- Do not under-classify operational security data (MCSB findings, misconfigs, resource IDs) as Laag solely because it is not citizen PII — NIS2/Cbw may require **Midden**.
+- LLTD BIV table is a proposal — not a substitute for the formal organisational BIV register.
+
+## Authenticity (A) & non-repudiation (NR)
+
+- Separate from BIV (ISO 27001 / BIO 2 themes). Consider in every design.
+- **Include A/NR resource table** when: email to externals, citizen data, financial flows, legal evidence, partner disputes.
+- **Omit table** only when Entra/MSI, git/ADO, STRIDE TM-01/TM-03, and §6 CI/CD already suffice — record in Appendix 1.
+- Map rows to BIO themes (e.g. 5.17 Authentication, 8.15 Logging, 8.32 Change management).
+- NR weak alone: Logic App/Function run history — pair with central immutable logs.
+
+## CISO delegate vs CISO
+
+| Actor | Mandate |
+| --- | --- |
+| **CISO delegate** | Routine Security Design Review; BIV Laag/Midden; Low/Medium STRIDE residual; scoped platform workloads |
+| **CISO (personal)** | Hoog BIV; High §9 risks; mandatory BIO/policy exceptions; public PaaS without PE (ADR); tenant-wide/citizen-facing; NIS2 board-level |
+
+Document delegate name, escalation path, and stage gates in stakeholder tables (§2.1).
+
+## STRIDE threat modeling
+
+- Before architecture finalisation; scopes §4 and pentest.
+- Trust boundaries from §3.3a context diagram and §3.4 network/traffic summary.
+- Cover: external entry points, layer boundaries, PII locations, admin/pipeline/MSI paths.
+- Per threat: scenario, component, mitigation, residual risk, acceptance owner, §9 reference.
+
+## Identity & access
+
+- Staff: Entra ID + MFA; Conditional Access; block legacy auth.
+- Citizens: DigiD/eHerkenning via approved broker only — no custom citizen auth.
+- Service-to-service: **Managed Identity / workload identity** — no long-lived credentials in code.
+- RBAC least-privilege; PIM for elevation with logged activation.
+- Key Vault: RBAC; MSI callers; audit secret access.
+- Storage: MSI/RBAC or short-lived SAS; no anonymous access on sensitive data.
+- APIM: JWT/OAuth; mTLS for partners where required.
+
+## Secrets — never in
+
+Source control, Bicep parameter files, pipeline YAML, standalone Variable Groups, Markdown, logs, or artifacts. Base64 is not encryption.
+
+- Store in **Key Vault**; Variable Groups only when Key Vault-linked.
+- Target: **federated OIDC** for ADO service connections (no stored client secrets).
+- Rotate immediately on leak. PRs with active secret alerts cannot merge.
+- Local dev: SecretManagement module; `.gitignore` local config.
+
+## Secure coding & CI gates (shift-left)
+
+Enable **GitHub Advanced Security** (GHAzDO) on all repos.
+
+**Blocking merge:** no secret violations; no open High/Critical dependency or code-scan alerts; SAST/lint pass; CI green.
+
+Stack: PSScriptAnalyzer + PSRule + Bicep linter on every PR; CodeQL where applicable.
+
+Every alert: fix, documented false positive, or risk accepted (owner + review date).
+
+## Network security
+
+- Prefer hub-spoke, Azure Firewall, NSG default-deny, UDRs, Private Endpoints, TLS 1.2+.
+- Ingress: App Gateway + WAF or Front Door. Egress: firewall FQDN allow-lists.
+- Admin: Bastion/VPN — no direct RDP/SSH from internet.
+- Profile B1 / PaaS-only: traffic summary table when full hub-spoke inventory N/A.
+- Prefer identity + Private Endpoint over IP allow-lists.
+
+## Data protection
+
+- TDE/SSE at rest; TLS 1.2+ in transit; no production PII in Dev/Test (mask/s synthesise).
+- Log access/mutations; retention ≥180 days operational; immutability where compliance requires.
+- Enable diagnostics to central Log Analytics / Sentinel — do not rely on portal-only history.
+
+## Compliance mapping (LLTD §4.4)
+
+Map controls to BIO with verification method (Policy, audit, manual review):
+
+- Access control: RBAC, MFA, PIM
+- Logging: central LAW, immutability, retention
+- Continuity: RTO/RPO, DR tests
+- GDPR: DPIA, DSR workflows (when PII applies)
+- Forum Standaardisatie: Digikoppeling/DigiD where citizen/G2G interfaces exist
+
+Policy exceptions and landing-zone deviations → ADR + CISO escalation when mandatory controls are waived.
+
+## IaC security defaults
+
+- System-assigned or user-assigned MSI on Logic Apps, Functions, App Service.
+- Disable storage shared keys when MSI path proven (`allowSharedKeyAccess=false`).
+- Blob versioning + soft delete where integrity matters.
+- ADO: branch policies, PR approval, environment gates on canary/production.
+- Grant minimum ARM write scope — constrain blast radius.
+- Record security gaps explicitly with backlog items rather than silent omission.
+
+## MCSB & BIO 2.0 (control-plane / IaC)
+
+**Tenant baseline:** GDH MG assigns **Microsoft Cloud Security Benchmark (MCSB)** + **NL BIO Cloud Theme V2**. Effects are the strictest **non-breaking** mix: **Deny** where safe, **Audit** where Deny would break, **DINE/Modify** for auto-remediation. Not all effects in both initiatives are Deny. Legacy MG: same initiatives, **Audit** during migration.
+
+**Policy-as-code:** definitions, initiatives, and assignments in **Bicep**; PR with **≥2 reviewers**; promote via CI/CD; validate all effects (Deny, Audit, DINE, Modify) in **Canary Tenant** before production.
+
+**Before merge/deploy:**
+- Pipeline **what-if** + **PSRule for Azure** + **Bicep linter** — do not merge IaC that will hit Deny policies without an approved exception path.
+- **GHAzDO merge gate** (all must pass): no secret violations; no open High/Critical dependency or code-scan alerts; SAST/lint green; CI success.
+
+**Code must implement (MCSB-aligned defaults):**
+- Credential-free automation: **MSI / federated OIDC** — no long-lived secrets in YAML, jsonc, Bicep params, or PS.
+- **TLS 1.2+**, no anonymous public PaaS access, shared keys disabled where MSI is used.
+- **Least-privilege RBAC** at narrowest scope (resource → RG → subscription → MG as needed, not tenant-wide write).
+- **Logging & change evidence** (BIO 8.15, 8.32): ADO PR history, environment gates, ARM activity logs; diagnostics to central LAW where required.
+
+**BIO themes to reflect in design/code reviews:** 5.15 Access control · 5.17 Authentication · 8.15 Logging · 8.16 Monitoring · 8.24 Cryptography · 8.32 Change management.
+
+**Classification:** security/MCSB operational metadata (findings, resource IDs, scores) = **BIV Midden** typical — not Laag by default (NIS2/Cbw).
+
+**Exceptions:** non-compliant landing-zone posture (public PaaS without PE, policy waiver) → **ADR in §9** + **CISO** sign-off (not delegate alone).
+
+**Segregation of duties:** pipeline author ≠ production release approver; security findings need owner + disposition (fix / false positive / risk accepted with review date).
+
+## MCSB control families (IaC checklist)
+
+When designing or reviewing templates, map resources to [MCSB v2 domains](https://learn.microsoft.com/security/benchmark/azure/overview):
+
+| Domain | IaC must address |
+| --- | --- |
+| **NS** Network security | PE, disable public access, Azure Firewall/WAF path, TLS 1.2+ |
+| **IM** Identity management | MSI, no shared keys, RBAC least privilege, no local admin secrets |
+| **PA** Privileged access | PIM for humans; pipeline SPs scoped; no Owner on routine deploy |
+| **DP** Data protection | Encryption at rest/transit, soft delete, versioning on sensitive storage |
+| **AM** Asset management | Tags, diagnostics, inventory via Azure Policy Audit |
+| **LT** Logging & threat detection | Diagnostic settings → central LAW/Sentinel; retention documented |
+| **IR** Incident response | Alert rules, actionable logs, runbook reference in LLTD |
+| **GS** Governance strategy | Policy assignments, exemptions time-boxed, ADR for waivers |
+
+## Enterprise tenant hardening (beyond single resources)
+
+- **Defender for Cloud** plans enabled per subscription type; regulatory compliance dashboard tracked.
+- **Entra ID:** Conditional Access (MFA, compliant device, block legacy auth); protect privileged roles with PIM + approval.
+- **Key Vault:** RBAC authorization, soft delete + purge protection in production, audit logs to LAW.
+- **Storage:** disable public blob access; `minimumTlsVersion`; immutability policy where audit requires WORM.
+- **SQL/PaaS data:** TDE on, `publicNetworkAccess: Disabled` + PE where data class ≥ Midden.
+- **Secrets rotation:** documented process; pipeline uses OIDC, not stored credentials.
+- **Vulnerability management:** GHAzDO + Defender recommendations triaged; High/Critical blocks merge.
+- **Cross-tenant:** canary validates policy assignment mechanics and effects only; prod compliance assessed in prod tenant.
+
+## Sentinel & detection (when applicable)
+
+- Connect data sources to **Microsoft Sentinel** for platform and security ops workloads.
+- Use **analytics rules** with entity mapping and clear severity; avoid duplicate detections.
+- **Workbooks** for MCSB/BIO compliance posture; no PII in shared queries (see KQL rules in `engineering.mdc`).
+- **Automation rules** for ticket routing; document in LLTD §5 observability.
+
+## NL BIO Cloud Theme V2 (Azure Policy)
+
+GDH assigns built-in initiative **NL BIO Cloud Theme V2** (`d8b2ffbe-c6a8-4622-965d-4ade11d1d2ee`, ~278 policies) alongside **MCSB**.
+
+**Important caveats (public audit findings):**
+
+- Initiative maps to **BIO thema-uitwerking Clouddiensten**, not every BIO 2.0 control. Azure Policy covers **technical** configuration only.
+- Regulatory Compliance blade shows **partial** compliance; process/organisational BIO controls need separate evidence (procedures, training, DPIA).
+- Policy **Audit** reports gaps; **Deny** blocks non-compliant deploys. Do not assume green dashboard = full BIO certification.
+- Non-technical BIO themes (supplier management, HR security, physical) remain outside Azure Policy scope.
+
+Reference: [NL BIO Cloud Theme regulatory mapping](https://learn.microsoft.com/azure/governance/policy/samples/nl-bio-cloud-theme) · [BIO thema-uitwerking Clouddiensten (CIP)](https://www.bio-overheid.nl/)
+
+## MCSB v2 extended domains (IaC checklist)
+
+MCSB v2 adds domains beyond the core eight. Include in LLTD §4.4 and template review when applicable:
+
+| Domain | Key controls | IaC / ops action |
+| --- | --- | --- |
+| **PV** Posture & vulnerability | Secure score, Defender recommendations | Enable Defender plans per subscription; triage High in backlog |
+| **ES** Endpoint security | EDR, OS hardening | VM extensions, Intune compliance (Profile A with VMs) |
+| **BR** Backup & recovery | Backup policies, soft delete | Azure Backup vault + retention; test restore documented in §7 |
+| **DS** DevOps security | CI/CD secrets, artifact integrity | WIF/OIDC, GHAzDO gates, signed artefacts where required |
+| **AI** Artificial intelligence | AI-1..AI-7 | Approved models, content filters, agent least privilege, HITL, AI red team for Hoog BIV |
+
+Reference: [MCSB v2 overview](https://learn.microsoft.com/security/benchmark/azure/overview) · [MCSB AI security](https://learn.microsoft.com/security/benchmark/azure/mcsb-v2-artificial-intelligence-security)
+
+## MCSB network & identity controls (high-value)
+
+When reviewing Bicep or LLTD §3.4, explicitly address these MCSB controls:
+
+| Control | Requirement |
+| --- | --- |
+| **NS-1** | Network segmentation (hub-spoke, NSG/ASG boundaries) |
+| **NS-2** | Disable public PaaS access; use Private Endpoints |
+| **NS-3/NS-6** | Central firewall + WAF on internet ingress |
+| **NS-9** | Private connectivity (ExpressRoute/VPN/PE), not public paths for admin |
+| **IM-1** | Centralised identity (Entra ID); no local auth for Azure resources |
+| **IM-3** | MSI/workload identity for apps and automation |
+| **PA-1..PA-8** | PIM, break-glass accounts monitored, no standing Owner for humans |
+| **DP-3/DP-4** | Encrypt data in transit (TLS 1.2+) and at rest (CMK or PMK) |
+| **LT-3/LT-4** | Diagnostic logs to central store; retention meets BIO 8.15 |
+
+## Encryption & key management
+
+- **Customer-managed keys (CMK):** use when data class ≥ Midden or contractual requirement; Key Vault in dedicated platform RG with PE.
+- **Key Vault:** RBAC authorization model; soft delete + purge protection in production; audit logs to LAW.
+- **Certificate rotation:** prefer managed certificates (App Gateway, Front Door); document manual rotation runbook if not automated.
+- **TLS:** minimum TLS 1.2; disable legacy cipher suites on App Service / Application Gateway.
+- **Storage:** infrastructure encryption where supported; immutability (WORM) for audit logs when BIO/NIS2 requires tamper evidence.
+
+## Zero Trust alignment (Azure)
+
+Apply in design reviews alongside MCSB:
+
+1. **Verify explicitly** — Conditional Access, MFA, continuous access evaluation where licensed.
+2. **Least privilege** — RBAC at narrow scope; JIT via PIM; pipeline identities per stage.
+3. **Assume breach** — Segment networks; central egress inspection; Sentinel detections on identity and data plane.
+4. **Validate explicitly** — Device compliance for admin paths; signed commits / branch policies for IaC repos.
+
+Reference: [Zero Trust on Azure](https://learn.microsoft.com/security/zero-trust/azure-infrastructure)
+
+## Policy exemptions & exceptions
+
+- **Exemption** in Azure Policy: time-boxed, named owner, business justification, linked ADR for Deny waivers.
+- **CISO path:** public PaaS without PE, disabled diagnostics on production tier, shared key access on sensitive storage.
+- **Never** permanent exemption without review date; include `expiresOn` in configuration parameters.
+- Document exemption in Git (configuration governance folder) when policy-as-code is source of truth.
+
+## NIS2 / Cbw considerations (platform metadata)
+
+- Operational security data (Defender findings, misconfigurations, subscription inventory) often **BIV Midden**, not Laag.
+- Incident reporting obligations may apply to essential/important entity workloads; document IR contacts in LLTD §5.
+- Supply chain: third-party SaaS/PaaS in scope needs vendor assessment (BIO supplier theme); Azure shared responsibility model in §4.4.
+
+## Security review checklist (PR / LLTD)
+
+Before merge or Security Design Review sign-off:
+
+- [ ] BIV classification confirmed (Hoog → CISO personal)
+- [ ] STRIDE completed for new trust boundaries
+- [ ] No secrets in code, params, YAML, or logs
+- [ ] MSI/OIDC for all automation identities
+- [ ] Public network access disabled or ADR exception
+- [ ] Diagnostics → central LAW configured in IaC
+- [ ] PSRule + Bicep linter + GHAzDO green
+- [ ] MCSB/BIO policy effects tested in canary where Deny is new
+- [ ] Authenticity/NR table present when external/citizen/financial evidence flows exist

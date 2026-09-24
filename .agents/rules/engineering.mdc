@@ -1,0 +1,298 @@
+---
+description: GDH engineering principles, Azure DevOps pipelines, commit message standards, and KQL
+globs: **/*.{yml,yaml,ps1,bicep,jsonc,kql},**/azure-pipelines/**,**/deployment-patterns/**
+alwaysApply: false
+---
+
+# Engineering — code-style-and-best-practices-guide
+
+Sources: `wiki/Design-Authority/Processes/code-style-and-best-practices-guide/` · [Azure WAF](https://learn.microsoft.com/azure/well-architected/) · [KQL best practices](https://learn.microsoft.com/azure/data-explorer/kusto/query-best-practices)
+
+## Generated code readability (all languages)
+
+When writing Bicep, PowerShell, YAML, JSONC, or KQL for human review:
+
+- **Do not use double dashes (`--`)** as comment markers or inline separators; use `#` (PS/YAML where allowed), `//` (JSONC/Bicep), or block help.
+- **Do not use em dashes (`—`)** inside code or comments; write plain sentences.
+- **Comment each logical block** (above the block): purpose, inputs/outputs, and security note when relevant (MCSB/BIO).
+- Split long scripts/templates into named sections with a one-line header comment each.
+- Generated snippets must be reviewable **without** asking the author what a block does.
+
+## General principles (SOLID, KISS, YAGNI, DRY)
+- Apply **SOLID, KISS, YAGNI, DRY** in all scripts, modules, and supporting code.
+- **PSScriptAnalyzer** is required baseline enforcement for PowerShell.
+- Implement only validated current requirements (YAGNI); extract repeated patterns (DRY).
+
+### Single Responsibility
+
+- One script file = **one function or one class** definition.
+- Each function/class has one clear responsibility.
+- Each script is either a **tool** (reusable task) or a **controller** (orchestrates tools).
+- No Swiss Army knife functions with unrelated branches — split into focused functions.
+
+### Open-Closed
+
+- Extend behaviour via abstractions/strategies; avoid rewriting tested core logic for each variant.
+
+### KISS
+
+- Deliver required behaviour with clear intent and minimal cognitive load — not simplistic, but not over-engineered.
+
+## Naming conventions — which case when?
+
+Pick the case from **what you are naming**, not personal preference. If two rows apply, the **more specific** row wins (e.g. Azure `name` string → kebab-case, not the Bicep symbol `storageAccount` → camelCase).
+
+### Decision guide
+
+| You are naming… | Use | Example | Do **not** use |
+| --- | --- | --- | --- |
+| PowerShell **variable** or **parameter** | **camelCase** | `$userCount`, `$deploymentRootScope` | `kebab-case`, `snake_case`, `PascalCase` |
+| PowerShell **function** | **Verb-Noun** (PascalCase segments) | `Get-PolicyAssignmentPlan` | `get-policyPlan`, `get_policy_plan` |
+| PowerShell **class** | **PascalCase** | `PolicyDeploymentContext` | `policyDeploymentContext` |
+| Bicep **`param` / `var` / resource symbol** (code identifier) | **camelCase** | `storageAccountName`, `resource policyAssignment` | `PascalCase`, `snake_case` |
+| Bicep **`name:`** / Azure resource string deployed to ARM | **kebab-case** (CAF/GDH) | `mgt-pol-prd-id001` | camelCase in the live resource name |
+| **JSONC** property keys | **camelCase** | `"deploymentRootScope"` | `SCREAMING_SNAKE` for ordinary keys |
+| **Pipeline / env token** (fixed for the run, injected via `ACPP_*`) | **SCREAMING_SNAKE_CASE** | `ACPP_SUBSCRIPTION_ID` | `$acppSubscriptionId` in YAML token names |
+| **Script/module constant** (never reassigned) | **SCREAMING_SNAKE_CASE** | `$script:MAX_RETRY_COUNT` | ordinary camelCase vars |
+| **Git branch**, **repo folder**, **URL slug**, **markdown file slug** | **kebab-case** | `feature/jakos/1234-policy-rollout` | `Feature/Jakos/...` |
+| **SQL table/column** (when writing SQL) | **snake_case** | `user_count` | camelCase in SQL (rare in control-plane repos) |
+| **Class, interface, enum, record** (C#/TS/Go types) | **PascalCase** | `UserProfile`, `DeploymentPlan` | `userProfile` for types |
+| Ordinary **method/function** (C#, TS, Go — not PowerShell) | **camelCase** | `calculateTotal()`, `getUser()` | PascalCase for non-PS functions |
+
+### The five cases — purpose
+
+| Case | Use when… | Why |
+| --- | --- | --- |
+| **camelCase** | Naming **data** or **behaviour** that is local, temporary, or passed around (vars, params, most functions outside PS types). | Signals “value in motion”, not a type blueprint. |
+| **PascalCase** | Naming a **type blueprint** (class, interface, PS Verb-Noun function, .NET type). | Signals “structural definition” at a glance. |
+| **kebab-case** | Naming things **outside the parser** (Azure resources, branches, paths, URLs) or **string literals** that become those names. | Hyphens are safe in infra/paths; illegal or ambiguous in most code (`a - b`). |
+| **snake_case** | Naming in **SQL** or ecosystems that standardise on it. | Clear word breaks without camelCase; uncommon in GDH IaC repos. |
+| **SCREAMING_SNAKE_CASE** | Naming **immutable configuration** (env vars, pipeline tokens, constants). | All-caps warns: do not reassign. |
+
+### GDH control-plane cheat sheet
+
+```
+PowerShell code     → camelCase (vars/params), Verb-Noun + PascalCase (functions/classes)
+Bicep code          → camelCase (param, var, resource symbols)
+Azure resources     → kebab-case / CAF (architecture.mdc)
+Branches & paths    → kebab-case
+Pipeline tokens     → SCREAMING_SNAKE_CASE (ACPP_*)
+```
+
+Details: `powershell.mdc`, `bicep.mdc`, `architecture.mdc`.
+
+## Commit messages
+
+Subject: ~**50 chars** target, ~**72 max**. Body/PR for extra context.
+
+**Do:** present-tense verb (`Add`, `Fix`, `Update`, `Remove`, `Refactor`, `Document`); name the main thing changed; sentence case.
+
+**Don't:** vague (`Update`, `WIP`, `Fix` alone); describe *how* in title; multiple unrelated changes; secrets/env names; emojis; ALL CAPS; debug iterations (`Almost there`, `Try 3`).
+
+Examples:
+- `Add Get-AdoOrgSettings function`
+- `Fix role assignment scope for managed identity`
+- `Add validation stage for Bicep build`
+
+## Azure DevOps pipelines
+
+### Stage sequence (mandatory)
+
+- **Production:** `build → what-if → deploy` — what-if mandatory, never skip or reorder.
+- **Canary:** `build → deploy`
+
+### Identity & security
+
+- Dedicated service principal per pipeline; **least privilege**.
+- **Owner** role on a **separate** SP only — never combined with routine deploy SP.
+- **No SP app secrets** for ADO service connections (not even Key Vault) — use **federated credentials / workload identity federation**.
+- Restrict secret access to minimum individuals.
+
+### Parameterization
+
+- **Never** hardcode subscription IDs, tenant IDs, or resource names in YAML.
+- Environment values via parameter files, runtime parameters, or Key Vault-linked variable groups.
+
+### Validation & what-if
+
+- Every pipeline: validation stage with **`bicep build` + linting** before deploy.
+- Production: **what-if immediately before deploy**; capture and log output.
+
+### Governance
+
+- Check **policy compliance** during deploy; governance violations **fail the pipeline** — no silent warnings.
+
+### Error handling
+
+- **Never swallow errors** — write all errors/warnings to console.
+- Support opt-in **debug/diagnostic** logging mode.
+- Resilient: one config/resource failure must not block remaining configs (fail whole pipeline only on catastrophic events).
+
+### Documentation & readability
+
+- Every pipeline YAML has a **same-name `.md`** doc (purpose, inputs, stages, dependencies).
+- Document all template references.
+- No duplicated logic across stages — extract reusable templates.
+- Pipeline must be understandable to a reviewer without verbal explanation.
+
+## Control plane repos (orchestration + configuration)
+
+**Orchestration** (`azure-control-plane-orchestration`): reusable Bicep modules, PowerShell tools, pattern pipeline templates — **no environment-specific values**.
+
+**Configuration** (`azure-control-plane-configuration`, landing-zone configs): parameter `.jsonc` files, thin entry YAML (`build-artifacts.yml`, `release-canary.yml`, `release-production.yml`) that **`extends:`** orchestration templates.
+
+Must-haves:
+- New instance = **one parameter file + thin YAML entry** — do not fork orchestration for a single consumer.
+- Environment values only in **configuration repo** (`.jsonc`, `*-env-vars-metadata.yml`, `global-vars-metadata.yml`).
+- Token replacement: `#{ACPP_TOKEN}#` in artefacts; `metadata.jsonc` per folder defines token scope; prefix **`ACPP_`** for injectable vars (**SCREAMING_SNAKE_CASE**).
+- On merge to `main`, orchestration **`ref:`** must point to **`main` or `release/*`** — reject PRs pinning personal `feature/*` refs (debug SOP only, not merged).
+- Branch names: `feature/<user>/<work-item-id>-<title>`, `release/*`, `hotfix/*` (lowercase, hyphens/slashes).
+- **Segregation of duties:** pipeline author ≠ production environment approver; orchestration PRs need **≥2 reviewers**.
+
+## JSONC & parameter files
+
+- **No secrets** in `.jsonc` / `.parameters.jsonc` — Key Vault refs, `@secure()` Bicep params, or Key Vault-linked variable groups at deploy time.
+- Subscription IDs, tenant IDs, MG names, and environment abbreviations belong in **configuration**, not orchestration templates.
+- Use JSONC comments for non-obvious tokens; keep keys aligned with token metadata contract.
+- Validate JSONC parses in CI (`ConvertFrom-Json` or equivalent) before deploy stages.
+
+## CI validation stack (control-plane PRs)
+
+Required before merge: **PSScriptAnalyzer** + **PSRule for Azure** + **Bicep linter/build** + **GHAzDO** (secrets, deps, CodeQL if applicable). High/Critical alerts block merge.
+
+## Enterprise IaC practices (Azure / MCSB-aligned)
+
+Applies to orchestration, configuration, and deployment-pattern repos.
+
+| Practice | Requirement |
+| --- | --- |
+| **Single source of truth** | No portal-only changes; drift detected via scheduled pipeline or `what-if`. |
+| **Idempotent deploy** | Re-run produces same state; use `existing` / create-if-missing patterns in PS. |
+| **Composable modules** | Orchestration modules are consumer-agnostic; env values only in configuration `.jsonc`. |
+| **Deterministic naming** | CAF names from parameters; no random suffixes except where ARM requires uniqueness. |
+| **Policy before prod** | PSRule + Bicep build in CI; canary tenant for new Deny effects. |
+| **Rollback path** | Document revert (git revert + redeploy); avoid one-way manual steps. |
+| **Resource locks** | `CanNotDelete` on production platform RGs via IaC where appropriate. |
+| **Diagnostics by default** | Every supported resource sends logs/metrics to central LAW (MCSB LT-3, BIO 8.15). |
+| **Secrets boundary** | Key Vault + MSI; `@secure()` params; never commit `.parameters.json` with secrets. |
+| **Version pinning** | Pin orchestration `ref:` to `main` or `release/*`; pin AVM/module versions explicitly. |
+
+Reference: [IaC on Azure](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/design-area/resource-org) · [ARM/Bicep deployment best practices](https://learn.microsoft.com/azure/azure-resource-manager/bicep/deploy-best-practices)
+
+## KQL best practices (Log Analytics / Sentinel)
+
+Use when authoring queries for dashboards, alerts, workbooks, or ad-hoc investigation.
+
+**Structure**
+
+- **Filter early:** `Table | where TimeGenerated > ago(24h) | where ...` before `join`, `parse`, or heavy `extend`.
+- **Project early:** select only columns needed downstream (`project`, `project-away`).
+- **Use `let`** for readable multi-step queries; one `let` per logical step with a descriptive name.
+- **Always bound time** on `TimeGenerated` (or table time column); never unbounded scans in scheduled rules.
+- **Prefer `summarize`** with `bin(TimeGenerated, 1h)` for trends; avoid row-by-row patterns.
+
+**Performance & cost**
+
+- Avoid `union *` and unscoped cross-workspace queries in scheduled alerts.
+- Use **`hint.strategy=shuffle`** on large joins when appropriate; avoid Cartesian joins.
+- Limit `parse` / regex on high-volume tables; prefer structured fields or ingestion-time parsing.
+- **`take`** only for exploration; production alerts use `summarize` + thresholds, not arbitrary `take 1000`.
+
+**Security & compliance (BIO 8.15 / MCSB)**
+
+- Query **operational metadata only** in shared workbooks; no citizen PII in saved queries unless access-controlled.
+- Parameterize user inputs in workbooks (`query_parameters`) to reduce injection-style mistakes.
+- Document alert **owner**, **severity**, and **runbook link** in alert rule description.
+- Prefer **scheduled query rules** with explicit `bin` and suppression to reduce alert fatigue.
+
+**Naming & maintenance**
+
+- Saved query name: `{area}-{purpose}-{env}` kebab-case (e.g. `sec-failed-signins-prd`).
+- Comment the query goal in the first lines (`// Detect ...`) for engineers reviewing in Sentinel.
+
+Reference: [KQL query best practices](https://learn.microsoft.com/azure/data-explorer/kusto/query-best-practices) · [Optimize Log Analytics queries](https://learn.microsoft.com/azure/azure-monitor/logs/query-optimization)
+
+### KQL patterns (commented examples)
+
+Use these shapes in Sentinel workbooks, scheduled query rules, and ad-hoc investigation:
+
+```kql
+// Goal: count failed Entra sign-ins per user in last 24h (alert input)
+// Scope: SigninLogs only; bound time first for cost control
+let lookback = 24h;
+SigninLogs
+| where TimeGenerated > ago(lookback)
+| where ResultType != 0
+| summarize failCount = count() by UserPrincipalName, bin(TimeGenerated, 1h)
+| where failCount >= 5
+```
+
+```kql
+// Goal: join NSG flow logs to VM inventory without full table scan
+// Note: project early; shuffle hint on large left side if needed
+let vms = VMComputer
+| where TimeGenerated > ago(1d)
+| project vmName = tolower(Computer), subscriptionId;
+AzureNetworkAnalytics_CL
+| where TimeGenerated > ago(1h)
+| where FlowStatus_s == "D" and FlowDirection_s == "I"
+| project TimeGenerated, srcIp = SrcIP_s, destIp = DestIP_s, rule = NSGRule_s
+| summarize hits = count() by rule, bin(TimeGenerated, 15m)
+```
+
+```kql
+// Goal: parameterized workbook query (never concatenate user input into dynamic())
+// Parameters: StartTime, EndTime defined in workbook UI
+AuditLogs
+| where TimeGenerated between (StartTime .. EndTime)
+| where OperationName has "Add member to role"
+| project TimeGenerated, InitiatedBy = tostring(InitiatedBy.user.userPrincipalName), TargetResources
+```
+
+**KQL anti-patterns (reject in review):** unbounded `union *`; `parse` on full-day SigninLogs without prior `where`; storing citizen PII in saved function names; duplicate alert rules with overlapping logic.
+
+## Drift detection & environment parity
+
+- Schedule **what-if** or **PSRule** against production parameter sets on a cadence (weekly minimum for platform RGs).
+- Compare ARM export vs Bicep source only as a diagnostic; **IaC repo wins** on conflict.
+- Document intentional drift in ADR when break-glass portal change was required.
+- **Canary vs production:** validate policy *definitions* and `what-if` in canary tenant; assess resource *compliance* only in the tenant where resources live.
+
+## Policy-as-code workflow (MCSB / BIO)
+
+MCSB and NL BIO Cloud Theme V2 are assigned with **Bicep** in orchestration and configuration **governance** folders. Do not introduce EPAC.
+
+1. Change assignment modules in orchestration; effect maps and MG scope in configuration `.jsonc`.
+2. CI: `bicep build`, PSRule, GHAzDO gates.
+3. **What-if** in canary tenant (separate Entra tenant): assignment/parameter delta, not prod resource impact.
+4. **Deploy** to canary MG; smoke-test Deny/Audit/DINE/Modify on representative resources.
+5. Promote to production MG after ≥2 reviewers and environment gate approval (what-if immediately before deploy).
+6. Time-box **exemptions** in configuration Git with owner, expiry, and ADR link when Deny must be waived.
+
+Reference: [Azure Policy as code](https://learn.microsoft.com/azure/governance/policy/concepts/policy-as-code) · `wiki/.../Governance/Compliance-policy-rollout.md`
+
+## Testing & quality (control-plane repos)
+
+| Layer | Tool | When |
+| --- | --- | --- |
+| Static analysis | PSScriptAnalyzer, Bicep linter | Every PR |
+| Policy compliance | PSRule for Azure | Every PR (Bicep/modules) |
+| Security | GHAzDO (secrets, deps, CodeQL) | Every PR; High/Critical blocks merge |
+| Unit | Pester (PowerShell tools) | Where repo has `tests/` |
+| Integration | Deploy to sandbox/canary subscription | Before production release |
+| Pre-prod | `what-if` immediately before deploy | Production pipelines only |
+
+## Pipeline observability
+
+- Emit **deployment correlation ID** (build ID + stage) in logs for cross-system tracing.
+- Publish what-if JSON/text as pipeline artefact for auditors (BIO 8.32 change evidence).
+- Fail pipeline on policy **Deny** during deploy; do not downgrade to warning for production.
+- Record approver identity via ADO environment gate (segregation of duties).
+
+## Azure Verified Modules (AVM) in orchestration
+
+- Prefer `br/public:avm/...` over bespoke resource blocks when AVM covers the scenario.
+- Pin AVM **version tag** in module reference; document upgrade path in module README.
+- Wrap AVM in internal pattern module only when GDH naming/tags/diagnostics need central enforcement.
+
+Reference: [AVM](https://azure.github.io/Azure-Verified-Modules/) · [Bicep registry modules](https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-registry-modules)

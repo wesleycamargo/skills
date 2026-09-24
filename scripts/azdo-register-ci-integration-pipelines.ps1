@@ -1,0 +1,191 @@
+#!/usr/bin/env pwsh
+# =============================================================================
+# azdo-register-ci-integration-pipelines.ps1
+# =============================================================================
+#
+# WHAT: Registers the quality-check CI and Integration pipelines
+#       (deployment-patterns/<pattern>/tests/ci.yml and tests/integration.yml)
+#       that live in the azure-control-plane-orchestration repo.
+#
+#       Nothing about which patterns exist or which branch to use is
+#       hardcoded - this walks $WorktreesRoot for '*-orchestration' story
+#       worktrees (skipping 'REFERENCE-*', which are historical examples,
+#       not live work), reads each worktree's actual checked-out branch from
+#       git, and looks inside its deployment-patterns/*/tests/ folders for
+#       ci.yml / integration.yml. It registers '<pattern>-ci' /
+#       '<pattern>-integration' under \azure-control-plane\quality-checks
+#       (not under the pattern's own folder) only for the files it actually
+#       finds on disk - tests/integration.yml's own pipeline resource points
+#       at \azure-control-plane\quality-checks\<pattern>-ci, so that is the
+#       folder ADO must resolve them from.
+#
+#       Idempotent - skips any pipeline that already exists. Uses
+#       --skip-first-run so registering does not queue a run.
+#
+# REQUIRES:
+#   - az login (against the tenant that owns dev.azure.com/gemeente-den-haag)
+#   - az extension add --name azure-devops
+#   - "Edit build pipeline" permission in the "Azure Control Plane" project
+#   - the .worktrees checkouts to be present locally
+#
+# USAGE:
+#   pwsh ./azdo-register-ci-integration-pipelines.ps1
+#   pwsh ./azdo-register-ci-integration-pipelines.ps1 -WhatIf
+# =============================================================================
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [string] $AdoOrganization = 'https://dev.azure.com/gemeente-den-haag',
+
+    [string] $AdoProject = 'Azure Control Plane',
+
+    [string] $AdoRepository = 'azure-control-plane-orchestration',
+
+    [string] $WorktreesRoot = (Join-Path -Path $PSScriptRoot -ChildPath '../.worktrees')
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Get-AdoPipelineByName {
+    <#
+    .SYNOPSIS
+        Resolves a pipeline definition object by name within an ADO folder.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $PipelineName,
+        [Parameter(Mandatory)] [string] $FolderPath,
+        [Parameter(Mandatory)] [string] $Organization,
+        [Parameter(Mandatory)] [string] $Project
+    )
+
+    $listArgs = @(
+        'pipelines', 'list',
+        '--folder-path', $FolderPath,
+        '--organization', $Organization,
+        '--project', $Project,
+        '--detect', 'false',
+        '--output', 'json'
+    )
+    $pipelines = az @listArgs | ConvertFrom-Json
+    return ($pipelines | Where-Object { $_.name -eq $PipelineName })
+}
+
+function Register-AdoPipelineIfMissing {
+    <#
+    .SYNOPSIS
+        Creates a folder-qualified pipeline definition if one with that name does not already exist.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $FolderPath,
+        [Parameter(Mandatory)] [string] $YmlPath,
+        [Parameter(Mandatory)] [string] $Branch,
+        [Parameter(Mandatory)] [string] $Organization,
+        [Parameter(Mandatory)] [string] $Project,
+        [Parameter(Mandatory)] [string] $Repository
+    )
+
+    $existing = Get-AdoPipelineByName -PipelineName $Name -FolderPath $FolderPath -Organization $Organization -Project $Project
+    if ($existing) {
+        Write-Host "    Already registered (id=$($existing.id)). Skipping."
+        return
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($Name, "Create pipeline under $FolderPath from $Branch")) {
+        return
+    }
+
+    $createArgs = @(
+        'pipelines', 'create',
+        '--name', $Name,
+        '--folder-path', $FolderPath,
+        '--yml-path', $YmlPath,
+        '--repository', $Repository,
+        '--repository-type', 'tfsgit',
+        '--branch', $Branch,
+        '--organization', $Organization,
+        '--project', $Project,
+        '--skip-first-run',
+        '--detect', 'false',
+        '--output', 'json'
+    )
+    $created = az @createArgs | ConvertFrom-Json
+    Write-Host "    Created pipeline id=$($created.id)"
+}
+
+Write-Host "Checking Azure CLI login..."
+$account = az account show --output json 2>$null | ConvertFrom-Json
+if ($null -eq $account) {
+    throw "Not logged in. Run 'az login' against the tenant that owns ${AdoOrganization} first."
+}
+Write-Host "Logged in as $($account.user.name)"
+
+$orchestrationWorktrees = Get-ChildItem -Path $WorktreesRoot -Directory |
+    Where-Object { $_.Name -like '*-orchestration' -and $_.Name -notlike 'REFERENCE-*' }
+
+foreach ($worktree in $orchestrationWorktrees) {
+    $gitOutput = & git -C $worktree.FullName branch --show-current 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $gitError = ($gitOutput | Out-String).Trim()
+        $repairCommand = 'git -C <main-orchestration-repository> worktree repair <worktree-path>'
+        $message = "Cannot determine the branch for worktree '$($worktree.FullName)'. Its Git metadata may reference a moved checkout."
+        $message += " Run '$repairCommand' and retry. Git output: $gitError"
+        throw $message
+    }
+
+    $branch = ($gitOutput | Out-String).Trim()
+    if ([string]::IsNullOrEmpty($branch)) {
+        Write-Host ""
+        Write-Host "=== $($worktree.Name) ===" -ForegroundColor Cyan
+        Write-Host "  Detached HEAD or no branch - skipping worktree"
+        continue
+    }
+
+    $patternsRoot = Join-Path -Path $worktree.FullName -ChildPath 'deployment-patterns'
+    if (-not (Test-Path -Path $patternsRoot)) {
+        continue
+    }
+
+    $patternDirs = Get-ChildItem -Path $patternsRoot -Directory |
+        Where-Object { Test-Path -Path (Join-Path -Path $_.FullName -ChildPath 'tests') }
+
+    foreach ($patternDir in $patternDirs) {
+        $pattern = $patternDir.Name
+        $testsDir = Join-Path -Path $patternDir.FullName -ChildPath 'tests'
+        $folderPath = '\azure-control-plane\quality-checks'
+
+        Write-Host ""
+        Write-Host "=== $pattern ($($worktree.Name), branch $branch) ===" -ForegroundColor Cyan
+
+        $testFiles = @(
+            [pscustomobject]@{ Suffix = 'ci'; FileName = 'ci.yml' }
+            [pscustomobject]@{ Suffix = 'integration'; FileName = 'integration.yml' }
+        )
+
+        foreach ($testFile in $testFiles) {
+            $pipelineName = "$pattern-$($testFile.Suffix)"
+            $filePath = Join-Path -Path $testsDir -ChildPath $testFile.FileName
+            Write-Host "  --- $pipelineName"
+
+            if (-not (Test-Path -Path $filePath)) {
+                Write-Host "    $($testFile.FileName) not found - skipping"
+                continue
+            }
+
+            $registerArgs = @{
+                Name         = $pipelineName
+                FolderPath   = $folderPath
+                YmlPath      = "deployment-patterns/$pattern/tests/$($testFile.FileName)"
+                Branch       = $branch
+                Organization = $AdoOrganization
+                Project      = $AdoProject
+                Repository   = $AdoRepository
+            }
+            Register-AdoPipelineIfMissing @registerArgs
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "Done."

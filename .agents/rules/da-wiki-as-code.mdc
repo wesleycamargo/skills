@@ -1,0 +1,58 @@
+---
+description: REQUIRED when creating or editing Design Authority wiki pages, .order files, or other documentation in this repo. Enforces publish-as-code placement, PR policy, and wiki structure.
+globs: wiki/**/*.md,wiki/**/.order
+alwaysApply: false
+---
+
+# Design Authority wiki as code
+
+This repository is **Azure DevOps Wiki (published as code)** for Gemeente Den Haag Azure **design and governance**, not implementation runbooks or sprint backlog.
+
+Sources (re-read when unsure):
+
+- `wiki/Design-Authority/Processes/Documentation-creation-guidelines.md`
+- `wiki/Design-Authority/Design-areas.md`
+- `wiki/Design-Authority/Processes/Working-as-code.md`
+- `wiki/Design-Authority/Processes/Pull-request-and-review-guide.md`
+- Root `README.md` (scope vs Control Plane Docs and PMO Cloud Platforms)
+
+## Change control
+
+- All wiki changes go through a **pull request**. Never commit directly to `main`.
+- Link the work item in the PR description. Explain what changed and how to verify.
+- Branch: `feature/<user-tag>/<work-item-id>-<kebab-title>` per `wiki/Design-Authority/Design-areas/Platform-automation-and-DevOps/Branch-naming.md`.
+
+## Where content belongs
+
+| Content type | Location under `wiki/Design-Authority/` |
+| --- | --- |
+| CAF design area guidance | `Design-areas/<Area>/` (see hub list in `Design-areas.md`) |
+| Processes and checklists | `Processes/` |
+| HLD/LLTD/ADR templates and diagrams | `Resources-and-templates/` |
+| Architecture decisions (accepted) | `Architecture-decision-log/` (not INBOX) |
+| ADR drafts under review | `Architecture-decision-log/INBOX/` |
+| Glossary terms | `wiki/Glossary/Definitions.md` |
+
+Do **not** put ALZ implementation runbooks here (Azure Control Plane **Docs for Cloud**). Do **not** store internal initiative packs here (**Projects** git repo). Application landing zone designs live in MDT repos.
+
+## Editing conventions
+
+- Use **relative links** only for in-repo targets. Run a link check before requesting merge.
+- Terminology must match `wiki/Glossary/Definitions.md`.
+- Describe **what is implemented and why**. Mark target state explicitly when not live yet.
+- When adding a sibling page under a folder, update that folder's **`.order`** file.
+- Design area **hub** pages (`Design-areas/*.md`) keep **`[[_TOSP_]]`** at the bottom so the wiki subpage index renders.
+- For HLD/LLTD/ADR bodies, **copy the standard template** from `Resources-and-templates/Design-Authority-Standard-Templates/`. Do not invent a new document skeleton.
+
+## What other rules cover (do not duplicate here)
+
+- HLD/LLTD content, CAF naming, diagrams: `architecture.mdc`
+- BIO/MCSB, BIV, STRIDE, secrets: `security.mdc`
+- ADR INBOX, numbering, index updates: `da-adr-lifecycle.mdc`
+- Azure DevOps backlog writes: `ado-user-stories.mdc`
+- Control plane orchestration/configuration repos: user rule `control-plane-repos.mdc` (not this wiki)
+
+## Do not
+
+- Put secrets, tokens, connection strings, passwords, or tenant/subscription GUIDs in markdown.
+- Use `--` or em dashes in generated code or comments (use `#` or `//` in code; plain hyphen in prose).

@@ -1,0 +1,200 @@
+---
+description: GDH PowerShell layout, types, documentation, output, SRP, and control-plane conventions
+globs: **/*.ps1,**/*.psm1
+alwaysApply: false
+---
+
+# PowerShell — style & best practices
+
+Sources:
+- `Powershell-style-guide.md`
+- `Powershell-best-practices.md`
+- `Engineering-guidelines.md` (SOLID/SRP)
+
+Also follow [PoshCode PowerShell Practice and Style](https://github.com/PoshCode/PowerShellPracticeAndStyle) for error handling, output, performance, security, and parameter blocks unless this guide states an exception.
+
+**PSScriptAnalyzer** is required — code must pass analyzer rules.
+
+## Generated code readability
+
+- **No double dashes (`--`)** in comments or strings used as separators; use `#` comment lines above each block.
+- **No em dashes** in comments; write full sentences for human reviewers.
+- **Comment each logical step** in controllers: authenticate, plan, deploy, verify. Tools: param validation, core action, return object.
+- Before non-obvious Azure calls, one line: `# Purpose: ... Scope: ... Idempotent: yes/no`.
+
+## Naming
+Full decision guide: `engineering.mdc`. **PowerShell — use this case when:**
+
+| When you write… | Case | Example |
+| --- | --- | --- |
+| A **variable** or **parameter** | **camelCase** | `$userCount`, `param([string] $resourceGroupName)` |
+| A **function** | **Verb-Noun** (approved verb + PascalCase noun) | `Get-PolicyAssignmentPlan` |
+| A **class** | **PascalCase** | `class DeploymentContext` |
+| A **script file** | Match the **function** name inside | `Get-AdoOrgSettings.ps1` |
+| A **constant** never changed after init | **SCREAMING_SNAKE_CASE** | `$script:MAX_RETRY_COUNT` |
+| A **string** that becomes an Azure resource **name** | **kebab-case** (CAF) | `'mgt-pol-prd-id001'` — not a PS identifier |
+
+**Never in PowerShell code:** `kebab-case` or `snake_case` identifiers (`$user-count` is invalid; `$user_count` is non-idiomatic).
+
+## Structure (SRP)
+
+- One file = one function **or** one class.
+- Script is a **tool** (reusable) or **controller** (orchestrates tools).
+- One responsibility per function; refactor when scope grows.
+
+## Types
+
+- Use **fully qualified .NET type names** — not aliases.
+
+```powershell
+# ✅ [System.String] $name    ❌ [string] $name
+# ✅ [System.Int32] $count    ❌ [int] $count
+# ✅ [System.Boolean] $flag    ❌ [bool] $flag
+```
+
+- Type on **same line** as parameter/variable with a space: `[System.String] $DataSource`
+
+## Layout
+
+- Max line length: **120 characters**.
+- **Avoid backtick (`` ` ``) line continuation** — fragile and hard to review. Prefer splatting (`@{}` / `@()`), pipeline layout, subexpressions, or refactor into smaller statements.
+- Prefer **here-strings** or `[pscustomobject]@{ ... }` over long backtick-wrapped lines.
+- Avoid inline comments — use a comment line **above** the block.
+- Comment-based help at the **top of the file** (before `function`), not inside the function body.
+- Document **each parameter** in `.PARAMETER` sections in the header help block.
+
+## Output & logging
+
+- **`Write-Host`**: host-display only, not function output.
+- Prefer `Write-Verbose`, `Write-Debug`, `Write-Warning`, `Write-Error` for logging.
+- In **Azure Pipelines**, use [ADO logging commands](https://learn.microsoft.com/en-us/azure/devops/pipelines/scripts/logging-commands) — explicit exception to Write-Host guidance.
+- Enclose variable values in **brackets** in messages: `Write-Host "Processing user: [$userName]"`
+
+## Error handling & security
+
+- Follow PoshCode error-handling best practices; do not empty `catch` blocks.
+- Follow PoshCode security best practices — no secrets in scripts, params, or output.
+- Use `[CmdletBinding()]`, `[Parameter(Mandatory)]`, `[ValidateNotNullOrEmpty()]` where appropriate.
+
+## Parameters
+
+- Follow PoshCode parameter-block best practices.
+- Mandatory parameters explicitly marked; validate inputs at boundary.
+
+## Control-plane scripts (orchestration/configuration)
+
+- Target **PowerShell 7+** (`#requires -Version 7.0` or repo-pinned version).
+- **Controllers** (orchestrate deploy/RBAC/token replace): set `$ErrorActionPreference = 'Stop'`; fail fast; no empty `catch` — rethrow or `throw` after logging.
+- **Tools** return structured objects — do not use pipeline output for side-effect-only logging.
+- **Never** output secrets, tokens, connection strings, or raw ARM payloads containing credentials (`Write-Host`, `Write-Output`, logs).
+- In **ADO pipelines**: authenticate via **service connection / OIDC** — no hardcoded SP secrets or `Connect-AzAccount` with client secret in script.
+- RBAC assignment scripts: **idempotent** (create-if-missing); retry Entra replication when assigning to new MSI (document wait/retry pattern).
+- Use **`Connect-AzAccount -Identity`** only on Azure-hosted agents with MSI when that is the approved pattern.
+- Prefer **`Invoke-Az*`** / **`Az.*`** modules over deprecated AzureRM.
+
+## Enterprise automation (MCSB / BIO aligned)
+
+- **Idempotent:** check existence before create (`Get-Az*` then `New-Az*`); safe to re-run pipeline.
+- **Least privilege:** scripts assume narrowly scoped service connection; no tenant-wide writes unless pattern LLTD allows.
+- **No secrets in output:** scrub objects before `Write-Output`; use `-WarningAction` for non-fatal issues.
+- **Entra replication:** after MSI/SP create, retry RBAC assignment with backoff (document in script header).
+- **Token replace:** validate all `#{ACPP_TOKEN}#` resolved before deploy; fail if placeholder remains.
+- **Audit trail:** log subscription ID, resource group, and operation start/end (no PII/secrets).
+- **What-if support:** where script wraps ARM deploy, expose `-WhatIf` or call `New-Az*` with `-WhatIf` when available.
+- **Tests:** PSScriptAnalyzer in CI; mock Azure calls in unit tests where repo supports Pester.
+
+Reference: [Azure PowerShell developer guidance](https://learn.microsoft.com/powershell/azure/dev-ops) · [Automation runbook security](https://learn.microsoft.com/azure/automation/automation-secure-asset-creation)
+
+## Az context & authentication
+
+```powershell
+# Purpose: connect with federated OIDC in ADO (no secret in script)
+# Scope: subscription from pipeline variable; fail if context wrong
+[System.String] $subscriptionId = $env:ARM_SUBSCRIPTION_ID
+Connect-AzAccount -Identity -SubscriptionId $subscriptionId | Out-Null
+$ctx = Get-AzContext
+if ($ctx.Subscription.Id -ne $subscriptionId) {
+    throw "Wrong subscription context: [$($ctx.Subscription.Id)]"
+}
+```
+
+```powershell
+# Purpose: idempotent role assignment at resource scope
+# Idempotent: yes; retries Entra propagation
+param(
+    [Parameter(Mandatory)][System.String] $principalId,
+    [Parameter(Mandatory)][System.String] $roleDefinitionId,
+    [Parameter(Mandatory)][System.String] $scope
+)
+$maxRetries = 5
+for ($i = 1; $i -le $maxRetries; $i++) {
+    try {
+        $existing = Get-AzRoleAssignment -ObjectId $principalId -RoleDefinitionId $roleDefinitionId -Scope $scope -ErrorAction SilentlyContinue
+        if (-not $existing) {
+            New-AzRoleAssignment -ObjectId $principalId -RoleDefinitionId $roleDefinitionId -Scope $scope | Out-Null
+        }
+        break
+    }
+    catch {
+        if ($i -eq $maxRetries) { throw }
+        Start-Sleep -Seconds (10 * $i)
+    }
+}
+```
+
+## Token replacement (configuration repos)
+
+```powershell
+# Purpose: fail deploy if any ACPP placeholder remains in rendered artefact
+[System.String] $content = Get-Content -Path $filePath -Raw
+if ($content -match '#\{ACPP_[A-Z0-9_]+\}#') {
+    throw "Unresolved token in file: [$filePath]"
+}
+```
+
+## Output hygiene
+
+- Return **`[pscustomobject]@{ ... }`** from tools; avoid writing raw ARM objects that may contain secrets.
+- **Scrub** before logging: remove `clientSecret`, `connectionString`, `accessKey` properties from any diagnostic dump.
+- Use **`Write-Verbose`** for operational detail; default pipeline logs at Information level.
+
+## Pester tests (when repo supports)
+
+```powershell
+# tests/Get-PolicyAssignmentPlan.Tests.ps1
+# Purpose: verify tool returns expected plan shape without live Azure calls
+Describe 'Get-PolicyAssignmentPlan' {
+    It 'returns a plan object with assignment count' {
+        Mock Get-AzPolicyAssignment { return @() }
+        $result = Get-PolicyAssignmentPlan -Scope '/providers/Microsoft.Management/managementGroups/mg10001'
+        $result.assignments | Should -Not -BeNullOrEmpty
+    }
+}
+```
+
+- Mock **`Get-Az*` / `Invoke-Az*`** in unit tests; integration tests run only in sandbox/canary pipelines.
+- PSScriptAnalyzer in CI on `tests/` and `src/` paths.
+
+## Parallelism & throttling
+
+- Avoid unbounded **`ForEach-Object -Parallel`** against Azure ARM; respect API rate limits (use batches + delay).
+- **Retry transient errors** (429, 503) with exponential backoff; cap retries and fail pipeline explicitly.
+- Do not parallelise RBAC assignments for the same principal without ordering when role conflicts exist.
+
+## Microsoft Graph (Entra automation)
+
+- Use **`Connect-MgGraph`** with managed identity or federated workload in pipeline; minimum app roles documented in LLTD.
+- Prefer Graph **batch** requests for bulk reads; never log token or client secret.
+- After app/SP create, allow **Entra replication delay** before RBAC (same retry pattern as above).
+
+Reference: [Microsoft Graph PowerShell](https://learn.microsoft.com/powershell/microsoftgraph/get-started)
+
+## Policy assignment scripts (Bicep / Az)
+
+- **What-if:** read-only at MG scope; attach output as pipeline artefact before production deploy.
+- **Deploy scripts:** least privilege (**Resource Policy Contributor** at MG, not Owner).
+- **Remediation (DINE/Modify):** remediation identity scoped to target subscription/RG only.
+
+## Script header template
+
+Every controller script starts with comment-based help including: synopsis, `.DESCRIPTION`, `.PARAMETER` blocks, **BIO/MCSB note** if security-relevant, and example usage without real subscription IDs.

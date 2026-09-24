@@ -1,0 +1,249 @@
+---
+description: GDH Bicep template structure, metadata, parameters, MCSB defaults, and enterprise IaC patterns
+globs: **/*.bicep,**/*.bicepparam
+alwaysApply: false
+---
+
+# Bicep — style guide
+
+Source: `wiki/Design-Authority/Processes/code-style-and-best-practices-guide/Bicep-style-guide.md` · [Bicep best practices](https://learn.microsoft.com/azure/azure-resource-manager/bicep/best-practices) · [AVM](https://azure.github.io/Azure-Verified-Modules/)
+
+Follow [Microsoft Bicep file structure](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/file) plus these repo rules.
+
+## Generated code readability
+
+- **No double dashes (`--`)** in comments; use `//` above each resource/module block.
+- **Comment intent** before each `resource`, `module`, and non-obvious `var`: what it deploys, MCSB control, and parameter dependencies.
+- Group related resources with a `// --- Section: ... ---` header (single hyphens only in section headers).
+
+## Naming
+Full decision guide: `engineering.mdc`. **Bicep — use this case when:**
+
+| When you write… | Case | Example |
+| --- | --- | --- |
+| A **`param`** | **camelCase** | `param storageAccountName string` |
+| A **`var`** | **camelCase** | `var diagnosticSettingName = '...'` |
+| A **resource/module symbol** (identifier in code) | **camelCase** | `resource storageAccount 'Microsoft.Storage/...'` |
+| The **`name:`** property (value Azure stores) | **kebab-case** / CAF | `name: 'mgt-pol-prd-id001'` |
+| A **`.bicep` file name** | **kebab-case** | `policy-assignment.bicep` |
+
+**Never in Bicep identifiers:** PascalCase, snake_case, or SCREAMING_SNAKE for `param`/`var`/symbols. Constants → use `param` + `@allowed` or a `var`.
+
+## File order
+
+1. `metadata module` block
+2. `targetScope` (if not default resource group)
+3. `param` declarations
+4. `var` declarations
+5. `resource` / `module` / `output`
+
+## Module metadata (required)
+
+Every template starts with:
+
+```bicep
+metadata module = {
+  version: '1.0.0'
+  author: 'ContributorTag'
+  name: 'Human-readable module name'
+  source: 'https://dev.azure.com/gemeente-den-haag'
+  description: 'What this module deploys.'
+}
+```
+
+Required fields: `version`, `author`, `name`, `source`, `description`.
+
+## Target scope
+
+Declare immediately after metadata when not default RG scope:
+
+`resourceGroup` | `subscription` | `managementGroup` | `tenant`
+
+## Parameters
+
+- Declare after `targetScope` (or after metadata if no targetScope).
+- Names: **camelCase**.
+- **`@description()` on every parameter.**
+- **`@secure()`** on secrets and sensitive values.
+- Use `@allowed`, `@minLength`, `@maxLength`, `@minValue`, `@maxValue` where appropriate.
+- Decorators directly above the parameter they apply to.
+- **Avoid default values** unless there is a clear reason.
+
+## Variables
+
+- Below parameters; **camelCase**; explicit intent.
+
+## Quality gates
+
+- Run **`az bicep build`** and **Bicep linter** before commit (pipeline validation stage required).
+- Run **PSRule for Azure** in CI — templates must pass CAF / Well-Architected policy rules aligned with tenant baseline.
+- No secrets in parameter files — use `@secure()` params supplied at deploy time / Key Vault refs.
+- Align resource naming with Design Authority CAF naming rules (see `architecture.mdc`).
+
+## MCSB & BIO 2.0 defaults (GDH tenant baseline)
+
+GDH MG assigns **Microsoft Cloud Security Benchmark** + **NL BIO Cloud Theme V2**. Per-policy effects aim for maximum **Deny** and **DINE/Modify** without breaking approved patterns; remaining controls stay **Audit**. IaC must still deploy compliant resources or document an **ADR + CISO escalation** for exceptions.
+
+When authoring resources, apply these defaults unless an approved pattern/ADR states otherwise:
+
+- **TLS 1.2+** (`minimumTlsVersion: TLS1_2`) on storage, app, and API endpoints.
+- **No anonymous public access** — `allowBlobPublicAccess: false`, `publicNetworkAccess: Disabled` where service supports it.
+- **Identity over keys** — MSI for runtime; set `allowSharedKeyAccess: false` when MSI/RBAC path is proven.
+- **Private Endpoints** for PaaS where reference architecture / MCSB expects private connectivity.
+- **Diagnostic settings** to platform Log Analytics — or record explicit gap in LLTD/backlog.
+- **Mandatory tags** per controlled vocabulary before subscription-level inheritance applies.
+- Prefer **Azure Verified Modules (AVM)** / approved pattern modules over one-off resource blocks.
+- **Policy assignments** at MG scope: manage as Bicep; validate in **Canary Tenant** before production promotion.
+
+## Module & composition patterns
+
+- **Prefer AVM** (`br/public:avm/...`) or approved internal modules over raw `resource` blocks.
+- **Module interfaces:** expose only required `params`; use `outputs` for IDs/names downstream modules need.
+- **`existing` keyword** for cross-RG/VNet references; do not duplicate data-plane resources.
+- **Scope explicitly:** deploy at lowest valid scope (RG > sub > MG); avoid tenant-wide modules unless pattern requires.
+- **No hardcoded** subscription/resource IDs in orchestration; pass via parameters from configuration `.jsonc`.
+- **Dependency order:** implicit via reference (`resourceId`, module outputs); avoid unnecessary `dependsOn`.
+- **Tags:** pass common tag object param; apply to all taggable resources in module.
+
+## Outputs & contracts
+
+- Every module **outputs** resource IDs and names consumers need (PE connection name, MSI principal ID, etc.).
+- Document outputs in module `description` metadata and parent pattern README.
+- Use `@secure()` on outputs only when value is secret (rare); prefer Key Vault references.
+
+## Enterprise deployment safety
+
+- **`@batchSize(1)`** or sequential deploy for resources with strict ordering (e.g. RBAC after MSI creation).
+- **Resource locks** via separate module or policy; document if pattern skips locks (sandbox only).
+- **Diagnostic settings** as sibling resource or dedicated sub-module; never optional in production patterns without ADR.
+- **Policy compliance:** run PSRule in CI; fix or exempt with documented ADR before merge.
+- **What-if** mandatory in production pipeline immediately before deploy stage.
+
+## Anti-patterns (reject in review)
+
+- Copy-paste resource blocks instead of module reuse.
+- Inline secrets or connection strings in `properties`.
+- `publicNetworkAccess: Enabled` on PaaS without ADR + CISO path.
+- Missing `@description` on params (blocks reviewer understanding).
+- `allowedValues` too broad on environment param (accidentally deploys wrong env to prod scope).
+
+## bicepconfig.json & linter
+
+- Repo root **`bicepconfig.json`**: enable linter rules aligned with CAF (`core-rules` + org overrides documented in README).
+- **`analyzers`** block: treat linter warnings as errors in CI (`bicep build` + exit on warning if pipeline supports).
+- **Module aliases** for internal registry paths to shorten `module` references and pin registry.
+
+```jsonc
+// bicepconfig.json: central linter and module alias config
+{
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "rules": {
+        "no-unused-params": "warning",
+        "prefer-interpolation": "warning"
+      }
+    }
+  },
+  "moduleAliases": {
+    "gdh": {
+      "registry": "<acr>.azurecr.io"
+    }
+  }
+}
+```
+
+## Parameter files (.bicepparam / .jsonc)
+
+- **Secrets never** in `.bicepparam`; use `@secure()` param supplied at deploy time from Key Vault / pipeline secret variable.
+- **Environment separation:** one parameter file per environment (`prd-rg001.bicepparam.jsonc`); validate `environment` param matches target scope.
+- Comment non-obvious tokens in JSONC; keys **camelCase** per `engineering.mdc`.
+
+```bicep
+// pattern-module.bicepparam: environment-specific values only (no secrets)
+using '../patterns/storage-account.bicep'
+
+param storageAccountName = 'app-sto-prd-sa001'
+param environment = 'prd'
+param enablePrivateEndpoint = true
+```
+
+## Conditional & incremental deployment
+
+```bicep
+// Deploy PE only when private connectivity is required (Profile A3 may set false with ADR)
+param enablePrivateEndpoint bool
+
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-04-01' = if (enablePrivateEndpoint) {
+  name: '${storageAccountName}-pe001'
+  // ...
+}
+```
+
+- Use **`existing`** for resources owned by another team/RG; do not redeploy hub assets from app patterns.
+- **`@batchSize(1)`** on nested deployments when RBAC must follow MSI creation order.
+
+## Diagnostic settings pattern (MCSB LT-3)
+
+```bicep
+// Send all supported logs and metrics to central LAW (replace workspace resource ID via param)
+param logAnalyticsWorkspaceResourceId string
+
+resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'send-to-law'
+  scope: storageAccount
+  properties: {
+    workspaceId: logAnalyticsWorkspaceResourceId
+    logs: [ { categoryGroup: 'allLogs', enabled: true } ]
+    metrics: [ { category: 'AllMetrics', enabled: true } ]
+  }
+}
+```
+
+## Resource locks (production platform)
+
+```bicep
+// CanNotDelete lock on production platform RG resources (skip in sandbox)
+param applyResourceLock bool = false
+
+resource lock 'Microsoft.Authorization/locks@2020-05-01' = if (applyResourceLock) {
+  name: 'canNotDelete'
+  scope: storageAccount
+  properties: {
+    level: 'CanNotDelete'
+    notes: 'Platform pattern; remove via IaC only'
+  }
+}
+```
+
+## Policy assignment via Bicep (MCSB / BIO)
+
+- Assign initiatives at **management group** scope with `enforcementMode: Default` on GDH. Set effect parameters per policy (Deny / Audit / DINE / Modify); do not assume a blanket Deny on every MCSB and BIO policy.
+- **`nonComplianceMessages`:** user-facing text for Deny (portal deploy, ARM API); keep concise, link to wiki runbook.
+- Test **Modify/DINE** effects in canary tenant; document remediation identity requirements in pattern README.
+- **Exemptions:** separate Bicep module or JSON; include `expiresOn`, `metadata.assignedBy`, ticket/ADR reference.
+
+Reference: [Bicep deploy policy assignments](https://learn.microsoft.com/azure/governance/policy/how-to/policy-definition-structure) · [Deploy best practices](https://learn.microsoft.com/azure/azure-resource-manager/bicep/deploy-best-practices)
+
+## Deployment stacks (optional)
+
+- Use **deployment stacks** for lifecycle management when pattern owns a bounded RG and delete-resources-on-stack-delete is understood.
+- Document stack action (add/modify/delete) in pipeline; not a substitute for what-if on production.
+
+Reference: [Deployment stacks](https://learn.microsoft.com/azure/azure-resource-manager/bicep/deployment-stacks)
+
+## Testing Bicep modules
+
+| Check | Command / tool |
+| --- | --- |
+| Compile | `az bicep build --file main.bicep` |
+| Lint | Bicep linter via VS Code / CI |
+| Policy | PSRule for Azure (`Az.Resources`, `Azure.*` rules) |
+| Preview | `az deployment group what-if` (production gate) |
+| Contract | Assert required `outputs` consumed by parent module in CI script |
+
+## Versioning & release
+
+- **Semantic versioning** in `metadata module.version`; increment on breaking param/output changes.
+- **Breaking change:** major bump + migration note in module README + orchestration `release/*` branch.
+- Pin consumer `module` refs to registry **tag** or commit hash, not floating `main` in production configuration repos.

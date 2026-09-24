@@ -1,0 +1,152 @@
+---
+description: GDH Azure Control Plane orchestration vs configuration split, folder-to-pipeline mapping, and cross-repo change rules
+alwaysApply: true
+---
+
+# Control plane repos (orchestration + configuration)
+
+Use this rule **before** adding YAML, Bicep, jsonc, or PowerShell in either repo. Answer four questions: which pipeline deploys this folder, which environment and Azure scope, what the other repo must add, and whether an existing pipeline already covers it.
+
+ADO project: `gemeente-den-haag` / `Azure Control Plane`.
+Live composition pipelines live under ADO folder `\production` and run YAML from **configuration**. Pattern templates and IaC live in **orchestration**.
+
+## Repo split (do not invert)
+
+| Repo | Role | Put here | Never put here |
+| --- | --- | --- | --- |
+| `azure-control-plane-orchestration` | Reusable templates, Bicep, PowerShell | `common/azure-pipeline-templates`, `common/bicep-resource-modules`, `common/common-powershell-scripts`, `deployment-patterns/<pattern>/*.yml` + `.bicep` + scripts | Subscription IDs, tenant IDs, MG IDs, service connection names, env-specific jsonc |
+| `azure-control-plane-configuration` | Env values + thin pipeline entry | `deployment-patterns/<pattern>/azure-pipelines.yml` (DNS: `azure.pipelines.yml`), `*.jsonc`, `common-configuration/*-env-vars-metadata.yml` | Forked copies of orchestration templates or Bicep modules |
+
+`engineering.mdc` still describes split entries (`build-artifacts.yml`, `release-canary.yml`, `release-production.yml`). **On `main` today** each live pattern uses **one** `azure-pipelines.yml` that `extends` the orchestration pattern and loops `Canary` then `Production`. Prefer that shape unless the team has already moved that pattern to split YAML **on `main`**.
+
+## Pipeline contract (every composition YAML)
+
+Configuration entry always:
+
+1. Declares `resources.repositories` named `azure-control-plane-orchestration` (`type: git`, `name: azure-control-plane-orchestration`).
+2. `extends` `/deployment-patterns/<pattern>/<pattern>.yml@azure-control-plane-orchestration`.
+3. Passes directories under `@self`: `bicepParametersDirectory`, `metadataDirectory`, `environmentConfigurationDirectory: /common-configuration`.
+4. Passes jsonc **filenames** (build flattens folders) plus `environments: [Canary, Production]`.
+5. Bootstraps service-connection variables so YAML expansion can see them; runtime values come from env metadata.
+
+```yaml
+# Debug SOP only (never merge a personal feature ref)
+# ref: refs/heads/feature/<user>/<id>-<title>
+# Merge-ready: refs/heads/main or a release tag (refs/tags/vX.Y.Z or refs/tags/latest)
+```
+
+**On configuration `main` today** (verify before bumping): `tenant-control-plane`, `tenant-iam-vending`, `platform-network-dns`, `platform-observability` pin `refs/tags/v1.10.0`. `platform-network-hub`, `platform-network-control-plane`, `platform-network-data-plane` pin `refs/tags/v1.16.0`. `landing-zone-firewall-rules` pins `refs/tags/latest`.
+
+Triggers on those entries include `feature/*` and the pattern path. Deploy stages skip pull requests (`Build.Reason != PullRequest`). ADO environments are `canary` and `production` (lowercased job `environment:`).
+
+## Shared stage shape
+
+1. **Build** (`common/azure-pipeline-templates/bicep-build-stage.yml`): checkout configuration + orchestration, copy jsonc to `configuration-artifacts` (flatten unless landing-zone-vending), copy `common/` and `deployment-patterns/` IaC. Despite the name, this stage does **not** run `bicep build` on `main`.
+2. **Canary Deployment** then **Production Deployment**: load `global-vars-metadata.yml` plus `${{ lower(environment) }}-env-vars-metadata.yml`. Jobs use `bicep-deployment-jobs.yml` (token replace `#{ACPP_*}#` then `bicepDeployment.ps1`) or `powershell-deployment-jobs.yml`.
+
+`bicepDeployment.ps1` on `main` calls `New-AzTenantDeployment` / `New-AzManagementGroupDeployment` / subscription deploy directly. There is **no** separate what-if YAML stage. `engineering.mdc` still requires production `build → what-if → deploy`; do not invent a new pipeline to satisfy that. Extend the shared deploy templates if what-if is added.
+
+ADO environment gates are the production approval boundary (segregation of duties).
+
+## Environments and Azure scopes
+
+Pipeline **environments**: Canary and Production. Values live in configuration `common-configuration/`:
+
+- Shared names/abbreviations: `global-vars-metadata.yml` (`ACPP_INTERMEDIATE_ROOT_MANAGEMENT_GROUP` = GDH `mg10001`, location `westeurope`).
+- Per env: `canary-env-vars-metadata.yml`, `production-env-vars-metadata.yml` (service connections `tnt-tcp-<can|prd>-sp001` identity, `sp002` tenant/infra; platform management/security/connectivity **subscription IDs belong only here**, never in orchestration).
+
+Management groups (configuration `tenant-hierarchy.parameters.jsonc`, not orchestration):
+
+| ID | Display | Role |
+| --- | --- | --- |
+| `mg10001` | GDH | Intermediate root. Compliance + remediation assignments. AVNM/DNS policies. |
+| `mg10002` | Legacy | Temporary. **Compliance only** (same jsonc). Hardcoded today on the tenant-control-plane composition YAML as `legacyIntermediateRootGroupManagementGroupId`. |
+| `mg20001` | Platform Landing Zone | Under GDH |
+| `mg20002` | Application Landing Zones | Under GDH |
+| `mg20003` | Sandbox | Under GDH |
+| `mg20004` | Decommissioned | Under GDH |
+| `mg30001`..`mg30004` | Connectivity, Identity, Management, Security | Under platform |
+| `mg30005`..`mg30006`, `mg30008` | Online, Corp, Artificial Intelligence | Under app LZs |
+| `mg30007` | Quarantine | Default MG for new subscriptions |
+
+Platform subscription **tokens** (IDs only in env yaml): `ACPP_PLATFORM_CONNECTIVITY_SUBSCRIPTION_ID` (hub, AVNM, DNS, firewall rules), `ACPP_PLATFORM_MANAGEMENT_SUBSCRIPTION_ID` and `ACPP_PLATFORM_SECURITY_SUBSCRIPTION_ID` (observability).
+
+## Folder to pipeline (on `main`)
+
+Match the folder you are editing to **one** row. Do not add a second composition pipeline for that folder.
+
+| You are in | Repo | ADO `\production` pipeline | Orchestration template | Scope | Jobs on `main` |
+| --- | --- | --- | --- | --- | --- |
+| `deployment-patterns/tenant-control-plane/**` | both | `3. tenant-control-plane` (also a dated clone name in ADO) | `tenant-control-plane.yml` | Tenant MG hierarchy; MG policy on `mg10001` and Legacy `mg10002` | Build; MG hierarchy Bicep + role-assignment script; GDH compliance; GDH remediation; Legacy compliance |
+| `.../tenant-control-plane/tenant-governance/**` | both | same tenant-control-plane pipeline | `tenant-governance.yml` → compliance/remediation Bicep | MG | MCSB + ISO/NIST initiatives from `compliance-policies.parameters.jsonc`; tag inheritance from `remediation-policies.parameters.jsonc` |
+| `.../tenant-control-plane/tenant-hierarchy/**` | both | same | `management-group-hierarchy.yml` | Tenant | `managementGroupHierarchy.bicep` + `managementGroupRoleAssignments.ps1` |
+| `.../tenant-control-plane/tenant-iam/**` | **config** | **`1. tenant-iam-vending`** (not tenant-control-plane) | `tenant-iam-vending.yml` | Entra + ADO | `principalVending.ps1` using flattened `ado.jsonc` / `enid.jsonc`. IAM composition still points `bicepParametersDirectory` at **tenant-hierarchy** and `metadataDirectory` at tenant-control-plane |
+| `deployment-patterns/tenant-iam-vending/**` | orch (+ config YAML only) | `1. tenant-iam-vending` | `tenant-iam-vending.yml` / `tenant-iam.yml` | Entra | Config folder is YAML-only on `main` |
+| `.../platform-observability/**` | both | `2. platform-observability` | `platform-observability.yml` | Subscription (management + security) | Two Bicep deploys of the same module, different jsonc + subscription tokens |
+| `.../platform-network-control-plane/**` | both | `2. platform-network-control-plane` (duplicate ADO name `1. Platform Network Control Plane` exists) | `platform-network-control-plane.yml` | Connectivity sub + MG `mg10001` | AVNM control plane; then AVNM network-group, IPAM, tier-tag, block-manual-peering policies |
+| `.../platform-network-data-plane/**` | both | `4 - Platform Network Data Plane` | `platform-network-data-plane.yml` | Connectivity sub | Prepare Az.Network; routing reconcile; conditional Bicep; commit. Composition also names `platform-network-avnm-governance.jsonc` which on `main` lives under **control-plane**, not data-plane |
+| `.../platform-network-hub/**` | both | `4. platform-network-hub` | `platform-network-hub.yml` | Connectivity sub | Hub Bicep; firewall baseline (generated jsonc from rule-collection files) |
+| `.../platform-network-dns/**` | both | `6. platform-network-dns` | `platform-network-dns.yml` | Connectivity sub + MG `mg10001` | Resolver, private zones (incl. postgres/citrix jsonc), built-in + custom DNS zone policies. Config entry file is `azure.pipelines.yml` (dot, not hyphen) |
+| `.../landing-zone-firewall-rules/**` | both | `5. landing-zone-firewall-rules` | `landing-zone-firewall-rules.yml` | Connectivity sub | Build merges workload sources; deploy generated `landing-zone-firewall-rules-prd.jsonc` and `-nonprd.jsonc` **inside each** Canary/Production stage |
+| `common/azure-pipeline-templates/**` | orch | **all** composition pipelines | consumed via `@azure-control-plane-orchestration` | n/a | Changing these affects every pattern after the next tag/ref bump |
+| `common/bicep-resource-modules/**` | orch | any pattern that modules it | n/a | as caller | Change module + consuming pattern Bicep; config jsonc only if params change |
+| `common/common-powershell-scripts/**` | orch | Bicep/PS deploy jobs | n/a | n/a | Shared token replace, Bicep deploy, principal vending |
+| `common-configuration/**` | config | **all** `\production` pipelines | included as variable templates `@self` | Canary/Production | Token source for `#{ACPP_*}#` |
+| `deployment-patterns/landing-zone-vending/**` | **orch only** | **not** in `azure-control-plane-configuration` | `landing-zone-vending.yml` | Subscription vending | Live ADO: `canary-landing-zone-vending` / `production-landing-zone-vending` in repo **`application-landing-zone-configuration`** |
+| `deployment-patterns/_TEMPLATE/**` | orch | sandbox `deployment-pattern-template` (YAML not on config `main`) | scaffold only | n/a | Copy this to start a **new** pattern; do not edit it as production |
+| `.../tenant-bootstrap/**`, `tenant-teardown/**`, `landing-zone-key-vault/**` | orch (bootstrap mockups in config) | **no** composition job on `main` | scripts / examples | n/a | Greenfield/manual; do not invent a pipeline unless product asks |
+
+`references/retiredScripts/**` is retired. Do not wire new pipelines to it.
+
+## Governance and MCSB on `main` (verify, do not assume feature branches)
+
+- Compliance jsonc assigns built-in initiatives including **MC-Security-Benchmark** (MCSB), ISO 27001/27002, NIST SP 800-53 R5, NIST CSF v2. **NL BIO Cloud Theme V2 is not in that jsonc on `main`.**
+- There is **no** `mcsbSafeDenyBicepParametersFile` (or extra MCSB Deny job) on `main`. Deny/effect-map work from feature branches is not the merge-ready contract until it lands on `main` and the composition YAML gains a parameter.
+- Both assignment Bicep modules pass `notScopes: []` (hardcoded). `avm-mg-scope.bicep` already accepts `notScopes`; wiring jsonc through is an orchestration + config jsonc change on the **existing** tenant-governance jobs, not a new pipeline.
+
+## When adding X, touch Y (do not create a new pipeline unless the last column says so)
+
+| Change | Orchestration | Configuration | New pipeline? |
+| --- | --- | --- | --- |
+| MCSB/BIO assignment, effect, parameters, extra initiative | `management-group-*-assignments.bicep` and/or `avm-mg-scope.bicep` if the module contract changes | `compliance-policies.parameters.jsonc` and/or remediation jsonc; bump orchestration `ref` | **No.** Same tenant-control-plane pipeline |
+| Tag inheritance / DINE remediation policy | Remediation Bicep if identity/RG needed | `remediation-policies.parameters.jsonc` | **No** |
+| MG tree or MG RBAC | `managementGroupHierarchy.bicep` / `managementGroupRoleAssignments.ps1` | `tenant-hierarchy.parameters.jsonc` | **No** |
+| Entra groups / Graph apps / ADO project roles for tenant SPs | `principalVending.ps1` / tenant-iam YAML only if script contract changes | `tenant-iam/enid.jsonc`, `ado.jsonc` | **No.** Use tenant-iam-vending |
+| Hub VNet, gateway, firewall policy | Hub/firewall Bicep | `platform-network-hub.jsonc`, firewall baseline + `rule-collections/*.jsonc` | **No** |
+| AVNM / IPAM / peering / tier-tag policy | `platform-network-governance/*.bicep` | `platform-network-*-governance.jsonc` | **No.** Control-plane pipeline |
+| AVNM routing intent | Data-plane Bicep/scripts | `platform-network-data-plane.jsonc` | **No** |
+| Private DNS zone or DNS policy | DNS Bicep | matching `platform-network-*.jsonc` or `platform-network-custom-dns-zone-records/*.jsonc`; add a composition **parameter** if a new file | **No** unless a new file cannot be passed into the existing DNS jobs |
+| Workload firewall rules | Firewall-rules scripts/Bicep | `landing-zone-firewall-rules*.jsonc` | **No** |
+| LAW / observability stamp | `platform-observability.bicep` | `platform-*-observability.jsonc` | **No** |
+| New **subscription vending** product line | landing-zone-vending scripts if the contract changes | **`application-landing-zone-configuration`**, not this configuration repo | **No** new pipeline in these two repos |
+| Brand-new capability with its own SP, ADO environments, and lifecycle | New `deployment-patterns/<kebab-name>/` from `_TEMPLATE` plus Bicep/PS; add jobs to a **new** pattern YAML | New folder + `azure-pipelines.yml` that `extends` the new template; jsonc; `ACPP_*` tokens if needed; **new** ADO definition after merge | **Yes, only then** |
+| Shared deploy/token behaviour | `common/azure-pipeline-templates` or `bicepDeployment.ps1` | none, then bump every pattern `ref` | **No** |
+
+## Merge order (templates before consumers)
+
+1. Land orchestration on `main` (and cut/push the tag the consumer pins, if that pattern still pins a tag).
+2. Open configuration PR: bump `resources.repositories.ref`, add/adjust jsonc and composition parameters.
+3. Configuration cannot `extends` a template path that exists only on an orchestration feature branch unless `ref:` is temporarily that branch (**debug SOP**). Revert `ref` to `refs/heads/main` or the release tag before merge.
+
+If both repos must change in one delivery: orchestration first, then configuration. Do not merge configuration that points at an unreleased template path.
+
+## New pipeline justification (default is no)
+
+Create a new composition YAML + ADO definition only when **all** are true:
+
+- New `deployment-patterns/<name>/` with its own lifecycle (different approvers, SP, or cadence).
+- No existing row in the folder table can deploy the artefact by adding a jsonc and a parameter.
+- You copied `_TEMPLATE` rather than cloning a sibling pattern wholesale.
+
+Do **not** create a pipeline for: one extra policy assignment, one extra DNS zone jsonc that a DNS job can take, a what-if wrapper, MCSB Deny (use tenant-governance), or landing-zone vending (third repo).
+
+## Gaps (do not invent files to fill them)
+
+- Split phoenix-one / `build-artifacts.yml` + `release-*.yml` and `deployment-patterns/*/tests/ci.yml` appear as ADO definitions but **are not on these two repos' `main`**. Ignore them until they exist in git on `main`.
+- Duplicate ADO names under `\production` for platform-network-control-plane. Prefer the definition whose YAML path matches the folder you edit.
+- `landing-zone-vending` orchestration has no matching folder in `azure-control-plane-configuration`.
+- Tenant-bootstrap, tenant-teardown, landing-zone-key-vault: no composition pipeline on `main`.
+- `bicep-build-stage.yml` does not compile Bicep; deploy jobs have no what-if stage.
+- Firewall-rules template references `parameters.dependsOn` without declaring it.
+- Data-plane composition references an AVNM governance filename that lives in the control-plane config folder.
+- Mockingbird pipelines use repo `mockingbird-configuration` (canary tenant clone), not these two repos.

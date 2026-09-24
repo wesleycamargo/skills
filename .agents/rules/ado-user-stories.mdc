@@ -1,0 +1,131 @@
+---
+description: REQUIRED when creating, updating, refining, or splitting Azure DevOps User Stories, Product Backlog Items, or Tasks via Azure DevOps MCP (wit_work_item, wit_work_item_write, wit_work_item_link_write). Enforces GDH Definition of Ready (ReadyForWork vs NeedsRefinement) and Definition of Done. Default project PMO Cloud Platforms.
+alwaysApply: false
+---
+
+# Azure DevOps stories (DoR / DoD)
+
+Apply this rule before any Azure DevOps MCP write to a User Story, Product Backlog Item, or Task. Re-read the source pages when criteria may have changed.
+
+Sources:
+
+- `wiki/Design-Authority/Processes/Definition-of-ready.md`
+- `wiki/Design-Authority/Processes/Definition-of-done.md`
+- `wiki/Design-Authority/Processes/Backlog-item-ready-checklist.md`
+- `wiki/Design-Authority/Processes/Backlog-item-done-checklist.md`
+- `wiki/Design-Authority/Processes/Definition-of-releasable.md`
+
+## MCP and identity
+
+- Default project: **PMO Cloud Platforms** (backlog only; do not store docs or code there).
+- Use `user-azure-devops`. Never call `mcp_auth`. Wrong projects: user runs `Connect-GdhAdminAz.ps1` outside Cursor.
+- Create: `wit_work_item_write` action `create`, type `User Story` unless the user asked for Task or PBI.
+- Refine: `wit_work_item` get with expand `All`, then update with a `/rev` test.
+- Links: `wit_work_item_link_write`. Children: `add_child`.
+- Description, Acceptance Criteria, and Definition of Done: `format` `Markdown`.
+
+## Do not
+
+- Put secrets, tokens, connection strings, passwords, or tenant/subscription GUIDs in any field.
+- Tag both `ReadyForWork` and `NeedsRefinement`.
+- Tag `ReadyForWork` unless every DoR item below is actually met.
+- Place a story in a sprint unless it is `ReadyForWork`.
+- Set state to Done, or tag `ReleasableToProduction`, during create or refine.
+- Invent untestable acceptance criteria ("works as expected").
+
+## Fields to set on every User Story
+
+| Field | Rule |
+| --- | --- |
+| `System.Title` | Outcome in plain language. Do not start with "As a". |
+| `System.Description` | Template below. Must be unambiguous. |
+| `Microsoft.VSTS.Common.AcceptanceCriteria` | Testable Given/When/Then. |
+| `Custom.DefinitionofDone` | Story-specific DoD covering every category. Not a wiki paste. |
+| `Microsoft.VSTS.Scheduling.StoryPoints` | From the t-shirt map. |
+| `Microsoft.VSTS.Common.Priority` | `1` highest, `2` default, `3`/`4` lower. Must be set (DoR: visible priority). |
+| `Microsoft.VSTS.Common.Risk` | `1 - High`, `2 - Medium`, or `3 - Low`. |
+| `Microsoft.VSTS.Common.ValueArea` | `Business` or `Architectural`. |
+| `System.Tags` | Exactly one of `NeedsRefinement` or `ReadyForWork`. |
+
+## Description template
+
+```markdown
+**As a** <role>
+**I want** <capability>
+**so that** <value>
+
+### Expected outcome
+<What PO acceptance looks like>
+
+### Functional requirements
+- ...
+
+### Non-functional requirements
+- Security:
+- Performance: (or not applicable, with reason)
+- Compliance:
+- Reliability or availability:
+
+### Dependencies, risks, constraints
+- Dependencies: resolved, or accepted with mitigation
+- Risks:
+- Assumptions:
+- Constraints:
+
+### Sizing
+T-shirt: XS | S | M | L. Fits one sprint: yes.
+```
+
+T-shirt to `StoryPoints`: **XS=1**, **S=2**, **M=3**, **L=5**. XL or larger: split; it is not ReadyForWork.
+
+## Definition of Ready (all required for ReadyForWork)
+
+Use as a gate, not decoration:
+
+1. Type confirmed (User Story / PBI / Task); extra criteria documented if any.
+2. Clear description, explicit expected outcome, acceptance criteria defined.
+3. Priority agreed and set on the work item.
+4. Dependencies identified; resolved or accepted with mitigation; risks, assumptions, constraints written.
+5. Functional and non-functional requirements identified (security, performance, compliance, reliability) or marked N/A with reason.
+6. T-shirt estimate present; small enough for one sprint.
+7. Required designs, decisions, and start approvals exist or are linked.
+
+If any item fails: tag `NeedsRefinement`, add a comment listing gaps, do not sprint-plan it.
+
+If all pass: remove `NeedsRefinement`, set `ReadyForWork`.
+
+## Definition of Done (field now, Done later)
+
+Write `Custom.DefinitionofDone` as the story-specific contract. Cover each category with checks this story can tick:
+
+1. **Code quality:** GDH engineering / Bicep / PowerShell / security rules; reviews approved; no open comments; two reviewers on orchestration PRs when that applies.
+2. **Testing:** required tests implemented; all applicable tests pass; results visible in pipeline and traceable to this ID.
+3. **Security:** static analysis / GHAzDO; no open Critical or High; accepted risk documented and approved by project management.
+4. **Compliance:** least-privilege RBAC; security logging on applicable resources.
+5. **Documentation:** technical (and operational if needed) versioned with the code; limitations and assumptions recorded.
+6. **Deployment readiness:** CI green; artifacts stored; deployment configuration validated.
+7. **Review, merge, deploy (in order):** merged to `main`; Canary deploy and integration tests; Product Owner approval; Production deploy; post-deploy validation.
+
+End the field with a link to the team DoD wiki page. Do not mark the work item **Done** until the done checklist is evidenced. `ReleasableToProduction` is a later gate.
+
+## Acceptance criteria
+
+- Binary and owned by this story.
+- Prefer Given / When / Then.
+- Include security or compliance checks when the story changes RBAC, policy, identity, or logging.
+
+```markdown
+- Given overrides are empty, when the template deploys, then the existing Audit path is unchanged.
+- Given the parameter is set, when the job runs, then it does not target Legacy.
+```
+
+## Links and children
+
+- Parent **Feature** when the user names one or one already exists.
+- Predecessor / successor for real delivery order.
+- Child **Tasks** for implementation slices. Tasks do not replace AC or DoD on the story.
+- Link the feature branch when it exists.
+
+## After a write
+
+Return the work item ID, HTML URL, current tag, story points, and a DoR gap list if the tag is `NeedsRefinement`.

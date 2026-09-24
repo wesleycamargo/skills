@@ -1,0 +1,216 @@
+---
+description: Gemeente Den Haag Design Authority — architecture, HLD/LLTD, ADRs, naming, IaC, diagrams
+globs: wiki/**/*.md,**/*.bicep,**/*.bicepparam,**/*.jsonc,**/deployment-patterns/**,**/adr/**
+alwaysApply: false
+---
+
+# Architecture — Design Authority (Gemeente Den Haag)
+
+Source of truth: Design Authority wiki in this repo. Prefer links over duplicating maintained content.
+
+References: [Azure WAF](https://learn.microsoft.com/azure/well-architected/) · [CAF landing zone](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/) · [MCSB](https://learn.microsoft.com/security/benchmark/azure/overview)
+
+## Generated code readability (all languages)
+
+- **No double dashes (`--`)** or em dashes in generated IaC/comments; use `#` or `//` comment lines.
+- **Comment each module/output block** in Bicep/YAML: architectural intent (hub-spoke, PE, diagnostics), not syntax.
+
+## Document types
+| Type | When | Content |
+| --- | --- | --- |
+| **HLD** | Scope and directional architecture approved first | What/why, FR/NFR, logical architecture, box-level connectivity, risks, BC tiers |
+| **LLTD/LLD** | After HLD (or equivalent intake) and before/during implementation | How: Azure resources, identity, network/trust boundaries, BIV, IaC/CI/CD, DR, tests, ADRs |
+| **ADR** | Any architecture-impacting decision or deviation | Context, options, decision, consequences — in Architecture Decision Log |
+
+- Every LLTD links upstream artefact in §0.1 (HLD, intake, or pattern brief). If no HLD, state replacement and approver.
+- Do not duplicate HLD in LLTD; trace FR/NFR to §3–§6 and §8.
+- Non-applicable LLTD sections → **Appendix 1: Not Applicable List**, then remove from body.
+- Deviations from HLD, reference architecture, or landing-zone standards → ADR in §9.
+- Doc changes via PR only; link work items; use relative links and [Definitions](wiki/Glossary/Definitions.md) terminology.
+
+## LLTD workload profiles (§0)
+
+Select **one** profile in metadata:
+
+- **Profile A — Application workload:** app in application subscription (internal **or** citizen-facing). Subvariants: **A1** internal staff, **A2** citizen/special-category data, **A3** PaaS-only (no custom VNet).
+- **Profile B — Platform automation:** pipelines, tenant-security patterns, hub/firewall/DNS. Subvariants: **B1** pattern/automation (trust-boundary + traffic summary), **B2** shared platform network (full §3.4 hub-spoke).
+
+**Application landing zone** = application subscription (+ optional spoke VNet). Not synonymous with DigiD/Digikoppeling.
+
+## Design Authority gates
+
+Required: new pattern/material deviation (ADR); Profile B wiki publication; non-standard network/identity/data posture; explicit platform/Regie request.
+
+Usually **not** required: Profile A internal app on standard ALZ baseline without ADRs; routine feature LLTD in approved boundary; Profile B deploy covered by approved pattern LLTD.
+
+When unsure, consult Design Authority early — default is not automatic escalation.
+
+## ADRs
+
+- Check existing ADRs before proposing new decisions.
+- Filename: `NNNN-en-short-slug.md` (sequential, language prefix).
+- YAML frontmatter: Status, Date, Author, Decision makers, Consulted, Informed.
+- Status: `proposed` → `accepted` | `rejected` | `deprecated` | `replaced by ADR-NNNN`.
+- Minimum: context, drivers, options, outcome, consequences, confirmation criteria.
+
+## Azure naming (CAF / GDH)
+
+**When:** any string that becomes an **Azure resource name**, **subscription display name**, or **management group** identifier in ARM.
+
+**Case: kebab-case** (lowercase + hyphens). Code symbols (`param`, `$var`) use **camelCase** — see `engineering.mdc`.
+
+- American English, **lowercase**, `a-z` `0-9` hyphens only; kebab-case between segments.
+- Named segments (`application`, `component`, `domain`, `environment`): **exactly 3 letters**.
+- Matryoshka order: Application → Component → Environment → resource type + instance → sub-resource.
+- Subscriptions add **Domain** above Application. Instance numbers zero-padded (`001`).
+- Use Microsoft CAF abbreviations. Names **deterministic from parameters**. **Immutable** after create.
+- Do **not** embed department, team, or region in names.
+- Environments: `sbx`, `dev`, `tst`, `acc`, `prd`.
+
+## Tagging
+
+- Controlled vocabulary via Azure Policy; keys **Uppercase**, values **lowercase**.
+- **Never** tag secrets, IPs, or PII.
+- Mandatory on subscription: `Applicatienaam`, `Omgeving`, `Afdeling`, `Eigenaar`, `Kostenplaats`, `Data Classificatie`.
+- `Eigenaar`: `<firstname.lastname@denhaag.nl>`.
+
+## IaC & repositories
+
+- IaC is the **only authoritative source** for infrastructure; manual drift must be detectable/recoverable.
+- **Orchestration repo:** reusable patterns (Bicep, workflows, pipeline templates).
+- **Configuration repo:** environment values, parameter files, composition pipelines (`extends` orchestration).
+- Application pipelines deploy only within assigned landing-zone subscriptions.
+- Document in LLTD §6.2: module layout, Key Vault refs for secrets, drift detection, policy-as-code, naming/tagging, environment parity.
+- Policy changes: PR + 2 reviewers; validate in **Canary Tenant** before production.
+- Baseline initiatives: **MCSB** + **NL BIO Cloud Theme V2**.
+
+## Code standards
+
+When writing Bicep, PowerShell, or pipelines, follow the dedicated rules: `engineering.mdc`, `bicep.mdc`, `powershell.mdc`.
+
+## Diagrams (draw.io)
+
+- Source + PNG in `.resources/` next to referencing markdown.
+- One `.drawio` per folder; tabs: `<nn>-<short-description>`. PNG: `<DrawioBase>-<TabName>.png`.
+- White background; version marker bottom-right; legend bottom-left if needed.
+- Commit `.drawio` + `.png` in same PR; sync markdown image refs.
+
+## Branch naming
+
+- `feature/<user>/<work-item-id>-<title>` or `hotfix/<user>/<work-item-id>-<title>` (**kebab-case**, lowercase, hyphens/slashes only).
+
+## LLTD deliverable quality
+
+- Remove template guidance blockquotes from final deliverables; keep completed tables and workload content.
+- §1 Management Summary: max one page; write last, read first.
+- Reference IaC repo paths as authoritative for resource configuration.
+
+## Azure Well-Architected pillars (enterprise)
+
+Apply in HLD/LLTD and review IaC against these lenses:
+
+| Pillar | GDH minimum bar |
+| --- | --- |
+| **Reliability** | Defined RTO/RPO; zone-redundant or documented single-zone risk; health probes; retry/idempotent deploy |
+| **Security** | MCSB + BIO 2.0 baseline; identity-first; private connectivity; see `security.mdc` |
+| **Cost Optimization** | Right-size SKUs; tags for chargeback; dev/test auto-shutdown where applicable |
+| **Operational Excellence** | IaC + ADO pipelines; observability to central LAW; runbooks for platform patterns |
+| **Performance Efficiency** | SKU choice justified in LLTD; autoscale where variable load |
+
+## Landing zone & connectivity (CAF)
+
+- **Hub-spoke** for Profile A/B2; Profile A3/PaaS-only documents trust boundaries instead of full §3.4 inventory.
+- **Central egress** via Azure Firewall; UDRs to hub; no spoke bypass unless ADR.
+- **Private DNS** zones linked to hub/spoke VNets; avoid public endpoints for PaaS when PE available.
+- **Subscription vending** via approved product lines; one application landing zone per workload boundary.
+- **Platform vs application** subscriptions separated; platform team owns hub, firewall, DNS, central LAW.
+- **Management groups:** GDH uses max non-breaking Deny + DINE/Modify; Legacy is Audit-only during migration. Document in LLTD.
+
+## Resilience & DR (document in LLTD §7)
+
+- **Backup:** Azure Backup or native service backup for stateful tiers; retention meets BIV/legal hold.
+- **Region:** single-region default unless HLD mandates paired region; document failover gap if single-region.
+- **Immutable logs** for security/audit streams where BIO requires tamper evidence.
+- **Dependencies:** explicit upstream/downstream (Entra, DNS, firewall, Key Vault) in context diagram.
+
+## Platform automation patterns
+
+- **Deployment patterns:** orchestration + configuration repos; no fork for one consumer.
+- **Policy-as-code:** MCSB/BIO via Bicep in orchestration and configuration governance folders; exemptions time-boxed in Git. No EPAC.
+- **Identity per pattern:** dedicated pipeline MI/SP per stage; WIF only.
+- **Observability:** diagnostic settings deployed with resource; LAW workspace per landing zone or central platform LAW.
+
+## Subscription & management group design (CAF)
+
+- **Platform subscriptions:** connectivity (hub), identity (if dedicated), management (LAW, automation, ACR), security (Sentinel, Defender export).
+- **Application landing zones:** one workload boundary per application subscription unless HLD consolidates tightly coupled tiers.
+- **Management group hierarchy:** root → platform → landing zones → sandbox; GDH MG for MCSB/BIO with max non-breaking Deny + remediation; Legacy MG Audit-only during migration.
+- **Policy inheritance:** assign MCSB + NL BIO Cloud Theme V2 at GDH MG; avoid subscription-level duplication unless exception documented.
+- **RBAC at MG scope:** platform team Reader/Contributor on app subs only when operational need exists; prefer RG-scoped roles.
+
+Reference: [CAF resource organization](https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/design-area/resource-org) · [Azure landing zone architecture](https://learn.microsoft.com/azure/architecture/guide/landing-zones/)
+
+## Network architecture patterns
+
+| Pattern | Use when | Document in LLTD |
+| --- | --- | --- |
+| **Hub-spoke** | Profile A/B2 with VNet integration | §3.4 full inventory, UDRs, NSG rules |
+| **PaaS-only (A3)** | No custom VNet; public endpoints avoided via PE where available | §3.3a trust boundaries, traffic summary table |
+| **Private Link** | PaaS data plane (Storage, SQL, Key Vault, Web Apps) | PE subnet, DNS zone links, firewall rules |
+| **Central egress** | All spoke outbound via Azure Firewall | FQDN tags, IDPS, logging to LAW |
+| **Ingress WAF** | Internet-facing HTTP(S) | App Gateway/Front Door + WAF mode (Prevention in prod) |
+
+**DNS:** private DNS zones in hub; link to spokes; avoid split-horizon mistakes (document forwarders in §3.4).
+
+**IP addressing:** RFC1918 space planned centrally; no overlapping CIDRs between spokes; reserve PE subnet per spoke.
+
+## Identity architecture (Entra + Azure RBAC)
+
+- **Human access:** Entra groups → Azure RBAC roles; no direct user assignments at scale.
+- **Workload access:** user-assigned MI per pipeline stage; federated credentials for ADO (no secrets).
+- **Cross-tenant:** canary pipeline identities live in canary tenant only; no shared SP across tenants.
+- **Guest/B2B:** document in LLTD if partners access app data; Conditional Access for guests.
+
+## Observability architecture
+
+- **Central Log Analytics workspace** (platform) receives diagnostics from hub, firewalls, Key Vault audit, Entra sign-in (where exported).
+- **Application insights** per workload or shared per landing zone per LLTD §5 decision.
+- **Metrics:** platform alerts on firewall drop spikes, Key Vault access anomalies, failed deployments.
+- **Retention:** align with BIO 8.15 (operational ≥180 days; security/legal hold longer when required).
+- **Immutability:** use immutability policies on storage holding audit archives when tamper evidence required.
+
+## Data classification & residency
+
+- **Allowed regions:** policy-enforced (EU/NL where required); document in §0 metadata.
+- **Data stores:** map BIV level to encryption, PE requirement, backup retention, and access logging intensity.
+- **Citizen / special-category data (A2):** DPIA reference, DigiD/eHerkenning broker, minimal retention, Hoog BIV triggers CISO review.
+
+## AI / Azure OpenAI workloads (when in scope)
+
+- Follow **MCSB AI domain** (AI-1..AI-7): approved models, content safety, agent least privilege, monitoring, red teaming for Hoog BIV.
+- Prefer **Azure AI landing zone** pattern: dedicated subscription or RG boundary, private networking, managed identity to model endpoints.
+- Document prompt/logging boundaries: no citizen PII in model logs unless DPIA allows.
+
+Reference: [Azure OpenAI landing zone](https://learn.microsoft.com/azure/architecture/ai-ml/openai/architecture/openai-landing-zone)
+
+## Integration & G2G (Forum Standaardisatie)
+
+- **Digikoppeling / DigiD / eHerkenning:** use approved municipal broker/integration layer; do not custom-build citizen auth.
+- **API management:** APIM as external façade; OAuth/JWT validation; rate limiting; mTLS for high-trust partners when required.
+- Document external endpoints, data flows, and certificate rotation in LLTD §3.3 and §4.
+
+## Capacity & lifecycle
+
+- **SKU justification:** record in LLTD §3 or §8 NFR table; right-size for cost pillar.
+- **Autoscale:** define min/max and scale rules for variable workloads; load test before production.
+- **Lifecycle:** decommission procedure (backup export, RBAC removal, DNS cleanup, policy exemption removal) in §7 or runbook.
+- **Environment promotion:** dev → tst → acc → prd with increasing policy strictness; no prod secrets in lower envs.
+
+## Architecture review red flags (escalate to Design Authority)
+
+- New internet-exposed PaaS without WAF or ADR
+- Shared keys or connection strings in IaC for production
+- Single-region stateful tier without documented RPO gap
+- Policy exemption without expiry or CISO path for Deny controls
+- Fork of orchestration repo for one consumer instead of configuration parameter file
+- AI workload processing special-category data without DPIA and MCSB AI controls

@@ -1,0 +1,63 @@
+---
+description: REQUIRED when creating, promoting, superseding, renumbering, or linking Architecture Decision Records in the Design Authority wiki.
+globs: wiki/**/Architecture-decision-log.md,wiki/**/Architecture-decision-log/**/*.md
+alwaysApply: false
+---
+
+# ADR lifecycle (Design Authority)
+
+Apply whenever you touch an ADR file or cite an ADR from wiki content.
+
+Sources:
+
+- `wiki/Design-Authority/Architecture-decision-log.md`
+- `wiki/Design-Authority/Architecture-decision-log/INBOX/README.md`
+- Templates: `wiki/Design-Authority/Resources-and-templates/Design-Authority-Standard-Templates/4-Architecture-decision-record-template-EN.md` (or NL)
+- PR guide: product or project owner approval required for ADRs (`Pull-request-and-review-guide.md`)
+
+## Before creating a new ADR
+
+1. Search `Architecture-decision-log/` and `INBOX/` for an existing decision on the same topic.
+2. Pick the next free sequential number. Check the **Current ADRs** list in `Architecture-decision-log.md` and the highest file in `INBOX/`.
+3. Copy the template. Do not invent headings or drop required sections.
+
+## Filename and frontmatter
+
+- Pattern: `NNNN-{en|nl}-short-kebab-slug.md` (example: `0024-en-example-decision.md`).
+- YAML frontmatter minimum: `Status`, `Date`, `Updated`, `Author`, decision makers, `Consulted`, `Informed`.
+- Status values: `proposed`, `accepted`, `rejected`, `deprecated`, `replaced by ADR-NNNN` (match wiki status model).
+
+## Draft vs accepted
+
+| Phase | Location | Status |
+| --- | --- | --- |
+| Under review | `Architecture-decision-log/INBOX/` | `proposed` |
+| Approved | `Architecture-decision-log/` (root of log folder) | `accepted` |
+
+While `proposed`, the file stays in **INBOX**. Do not list it in **Current ADRs** as final guidance yet.
+
+## On acceptance (same PR or follow-up)
+
+1. Move the file from `INBOX/` to `Architecture-decision-log/`.
+2. Set `Status: accepted` and update `Updated`.
+3. Add a bullet to **Current ADRs** in `Architecture-decision-log.md` with title and relative link.
+4. If the ADR **supersedes** another: set `Supersedes` / `replaced by` in frontmatter, move superseded file to `Architecture-decision-log/Superseded/` if policy requires, and edit **both** ADRs to cross-link.
+5. Update **every wiki page** that cited the draft INBOX path or old filename (grep for `INBOX/` and the ADR number).
+
+## Citations in other wiki pages
+
+- Link to the **promoted path** under `Architecture-decision-log/`, not `INBOX/`.
+- Match the **actual filename** on disk (titles change during promotion).
+- Attribute each claim to the ADR that owns that decision (read the Decision Outcome section). Do not cite ADR-00NN if another ADR owns the rule (example: platform Key Vault Variable Groups belong to ADR-0021, not laptop secret handling in ADR-0016).
+
+## Reviews
+
+- Minimum **two peer approvals** (not the author), plus **product or project owner** for ADRs.
+- Submit via PR; no direct commits to `main`.
+
+## Do not
+
+- Publish `accepted` ADRs only in INBOX.
+- Skip updating `Architecture-decision-log.md` after adding or renaming an ADR.
+- Reuse an ADR number or leave a gap without team agreement.
+- Put secrets or environment-specific GUIDs in ADR bodies.

@@ -1,0 +1,22 @@
+---
+description: Pin Cursor Azure and Azure DevOps MCP to the GDH admin Az PowerShell context. Never use Windows WAM/interactive login.
+alwaysApply: true
+---
+
+# MCP identity (GDH admin vs mailbox)
+
+This workstation has two Entra identities. They must stay split.
+
+- Mailbox / Teams / Windows: the non-admin work account. Leave it signed in.
+- Azure and Azure DevOps in Cursor: `jakobijn.strobbe.admin@denhaag.nl` via Azure PowerShell device-code login.
+
+## Hard rules
+
+- `C:\Users\BVJSTRO\.cursor\mcp.json` must keep both servers on `AZURE_TOKEN_CREDENTIALS=AzurePowerShellCredential`.
+- Azure DevOps MCP must use `--authentication env` and `--tenant 8c653938-6726-49c5-bca7-8e44a4bf2029`.
+- Never set Azure DevOps MCP to `--authentication interactive`.
+- Never set `AZURE_MCP_ONLY_USE_BROKER_CREDENTIAL=true`.
+- Never call `mcp_auth` on Azure or Azure DevOps MCP. That opens Windows Web Account Manager and selects the mailbox account.
+- Do not add the admin UPN as a Windows work or school account.
+
+If MCP shows the wrong projects or cannot write to PMO Cloud Platforms, run `C:\Users\BVJSTRO\.cursor\Connect-GdhAdminAz.ps1` in a normal PowerShell window, then reload Cursor. Do not re-authenticate MCP through a WAM picker.
