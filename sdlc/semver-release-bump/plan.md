@@ -94,14 +94,19 @@ Validation:
 - The version change moved here from Task 4 was completed with Task 3. The committed version is `0.0.0-development`, and `npm pack --dry-run` lists the same 10 files. The README and both `AGENTS.md` files describe the automatic flow, and GitHub Packages is a legacy note.
 
 ### Task 5 — First automated release
-Status: pending
+Status: completed
 Depends on: Tasks 3–4
 
-- [ ] Push the integrated branch without `[skip ci]`, and let the workflow publish. For `feature/*`, this is a beta release, such as `0.3.2-beta.0`, with no tag. For `main` or a manual run, it is a stable release with tag `v0.3.2`.
-- [ ] Confirm the published version matches the preview, the tag exists on the release commit (stable only), and a rerun with no new commits reports nothing to release.
+- [x] Push the integrated branch without `[skip ci]`, and let the workflow publish. For `feature/*`, this is a beta release, such as `0.3.2-beta.0`, with no tag. For `main` or a manual run, it is a stable release with tag `v0.3.2`.
+- [x] Confirm the published version matches the preview, the tag exists on the release commit (stable only), and a rerun with no new commits reports nothing to release.
 
 Validation:
 - Spec acceptance criterion 6, recorded with the run URL and the npmjs version.
+- Completed 2026-09-24. The first push run (https://github.com/wesleycamargo/skills/actions/runs/36073090126) failed at Test before publishing: the job's `RELEASE_CHANNEL=beta` leaked into the publish-script test fixtures. The fix, `920513f`, unsets it in the harness.
+  - Push run https://github.com/wesleycamargo/skills/actions/runs/36073183735 published `0.4.0-beta.0` under `beta` with no tag, and `latest` stayed at `0.3.1`.
+  - Manual run https://github.com/wesleycamargo/skills/actions/runs/36073361087 published `0.4.0` under `latest` and pushed `v0.4.0`. The tag, the release commit, and npm's `gitHead` are all `920513f`.
+  - Both versions are minor because of the unmarked commit `27dfeb0 Move agent skills into skills directory`.
+  - Afterwards, `npm run release:preview` prints `none` with baseline `0.4.0`, and `npx @wesleycamargo/skills-sync@latest` runs `0.4.0`.
 
 ## Risks and Dependencies
 
@@ -120,7 +125,7 @@ Validation:
 
 ## Handover
 
-Current: Task 5 — first automated release.
-Next: push `feature/skills-sync-v1` (beta release `0.3.2-beta.0`), then run the workflow manually for stable `0.3.2` and tag `v0.3.2`.
+Current: All tasks completed.
+Next: hand off to `sdlc-validate-implementation`.
 Blockers: None
-Remaining validation: spec acceptance criterion 6.
+Remaining validation: independent validation of spec acceptance criteria 1–6. The evidence is recorded in the tasks above.
