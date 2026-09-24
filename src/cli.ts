@@ -38,6 +38,7 @@ async function init(): Promise<void> {
   if (selection.some(s => !available.includes(s))) throw new Error('Selection contains a skill absent from source');
   const direction = await prompt('Direction (bidirectional/pull/push)', old?.direction || 'bidirectional');
   const agents = (await prompt('Agents (comma separated, blank to skip)', old?.agents.join(',') || '')).split(',').map(s => s.trim()).filter(Boolean);
+  if (agents.length) throw new Error('Agent installation is still under development. Leave agents blank for this draft.');
   const mode = await prompt('Publish mode (local-commit/branch/pull-request/main/override-main)', old?.publication.mode || 'local-commit');
   const publicationBranch = ['branch', 'pull-request'].includes(mode) ? await prompt('Publication branch', old?.publication.branch || 'skills-sync/update') : undefined;
   const config = validateConfig({ version: 1, source: { repository, branch, path: sourcePath }, target: { path: targetPath }, selection, direction, agents, publication: { mode, branch: publicationBranch } });
