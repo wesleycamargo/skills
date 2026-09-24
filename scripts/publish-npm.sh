@@ -58,6 +58,9 @@ if ! publish; then
   if grep -q 'EOTP' "$publish_output"; then
     fail "npmjs requires an interactive OTP. Set NPM_OTP locally, or configure npm trusted publishing for GitHub Actions."
   fi
+  if [[ "$actions_mode" == true ]] && grep -q 'E_STAGE_REQUIRED' "$publish_output"; then
+    fail "npm only authorizes staged publishing for this trusted publisher. Enable direct npm publish in npm package settings, or use an approved staged-release workflow; do not retry this direct release."
+  fi
   if [[ "$actions_mode" == true ]] && grep -Eq 'E401|E403|ENEEDAUTH' "$publish_output"; then
     fail "npm rejected GitHub Actions trusted publishing. Verify its owner, repository, workflow filename, and permission for direct npm publish; do not retry until corrected."
   fi

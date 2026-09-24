@@ -50,6 +50,7 @@ case "$1" in
     if [[ "$publish_result" == e409 ]]; then echo E409 >&2; exit 1; fi
     if [[ "$publish_result" == eotp ]]; then echo EOTP >&2; exit 1; fi
     if [[ "$publish_result" == e403 ]]; then echo E403 >&2; exit 1; fi
+    if [[ "$publish_result" == stage_required ]]; then echo E_STAGE_REQUIRED >&2; exit 1; fi
     touch "$MOCK_PUBLISHED_MARKER"
     ;;
 esac
@@ -109,6 +110,13 @@ trusted_publisher_rejection_case() {
     test "$(grep -c '^publish' "$fixture/log")" -eq 1
 }
 
+stage_only_rejection_case() {
+  local fixture="$1"
+  ! run_script "$fixture" env MOCK_VIEW=missing GITHUB_ACTIONS=true MOCK_PUBLISH=stage_required &&
+    grep -Fq 'npm only authorizes staged publishing' "$fixture/output" &&
+    test "$(grep -c '^publish' "$fixture/log")" -eq 1
+}
+
 fixture="$TMP/published"
 make_fixture "$fixture"
 check 'published version skips npm publish' published_case "$fixture"
@@ -136,6 +144,10 @@ check 'publish conflict does not retry' conflict_case "$fixture"
 fixture="$TMP/trusted-publisher-rejection"
 make_fixture "$fixture"
 check 'trusted-publisher rejection has a safe remediation' trusted_publisher_rejection_case "$fixture"
+
+fixture="$TMP/stage-only-rejection"
+make_fixture "$fixture"
+check 'stage-only rejection does not retry direct publishing' stage_only_rejection_case "$fixture"
 
 printf '%s passed; %s failed.\n' "$pass" "$fail"
 test "$fail" -eq 0
