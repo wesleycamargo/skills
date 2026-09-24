@@ -127,14 +127,16 @@ export async function formatDiff(change: Change): Promise<string> {
       const [leftName, left, rightName, right] = pairs[i];
       if (left === right) continue;
       const leftPath = path.join(dir, `left-${i}`), rightPath = path.join(dir, `right-${i}`);
-      if (left !== undefined) await writeFile(leftPath, Buffer.from(left, 'base64'));
-      if (right !== undefined) await writeFile(rightPath, Buffer.from(right, 'base64'));
+      await Promise.all([
+        writeFile(leftPath, left === undefined ? Buffer.alloc(0) : Buffer.from(left, 'base64')),
+        writeFile(rightPath, right === undefined ? Buffer.alloc(0) : Buffer.from(right, 'base64'))
+      ]);
       try {
-        const { stdout } = await exec('git', ['diff', '--no-index', '--no-prefix', left === undefined ? '/dev/null' : leftPath, right === undefined ? '/dev/null' : rightPath], { maxBuffer: 10 * 1024 * 1024 });
-        if (stdout) output.push(stdout.replaceAll(leftPath, leftName).replaceAll(rightPath, rightName));
+        const { stdout } = await exec('git', ['diff', '--no-index', '--no-prefix', leftPath, rightPath], { maxBuffer: 10 * 1024 * 1024 });
+        if (stdout) output.push(stdout.replaceAll(leftPath, left === undefined ? '/dev/null' : leftName).replaceAll(rightPath, right === undefined ? '/dev/null' : rightName));
       } catch (error) {
         const diff = (error as Error & { stdout?: string }).stdout;
-        if (diff) output.push(diff.replaceAll(leftPath, leftName).replaceAll(rightPath, rightName));
+        if (diff) output.push(diff.replaceAll(leftPath, left === undefined ? '/dev/null' : leftName).replaceAll(rightPath, right === undefined ? '/dev/null' : rightName));
       }
     }
   } finally { await rm(dir, { recursive: true, force: true }); }
