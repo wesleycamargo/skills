@@ -91,6 +91,6 @@ Run the package build and focused unit/integration tests. Exercise wizard setup,
 
 ## Handover
 
-Current: Draft PR #1 includes the v1 CLI, wizard, upstream agent installation adapter, per-skill state, conflict and deletion handling, all publication modes, and pending branch/PR recovery. Eighteen automated tests pass after a clean `npm ci`; the PR lifecycle test mocks GitHub's CLI/API.
-Next: Finish real GitHub PR/authentication checks, protected-branch and concurrent-main tests, then run the isolated two-repository walkthrough and complete platform documentation.
-Blockers: Real authenticated GitHub operations and Windows/macOS execution are not available in this validation run. Keep the PR in draft until those checks pass.
+Current: Draft PR #1 includes the v1 CLI, wizard, upstream agent installation adapter, per-skill state, conflict and deletion handling, all publication modes, and pending branch/PR recovery. Eighteen automated tests pass after a clean `npm ci`; a real GitHub pull-request lifecycle created, updated, merged, and recovered a pending publication without touching main. The package now requires Node.js 22.20.0 or later, matching pinned `skills@1.7.0`.
+Next: Test protected-branch and concurrent-main failures, then run the isolated two-repository walkthrough and complete platform documentation.
+Blockers: Windows/macOS execution is not available in this validation run. Keep the PR in draft until those checks pass.

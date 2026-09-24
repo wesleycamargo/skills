@@ -51,6 +51,74 @@ test('pulls, publishes, and remains unchanged on the next sync', async t => {
   assert.match(repeat.stdout, /No changes/);
 });
 
+test('keeps project content and baseline recoverable when source rejects publication', async t => {
+  const { bare, project, temp } = await fixture(t);
+  assert.equal(invoke('sync', project, '--yes').status, 0);
+  const skill = path.join(project, '.agents/skills/example/SKILL.md');
+  await writeFile(skill, '---\nname: example\ndescription: Test fixture\n---\nprotected project edit\n');
+  const [projectBefore, stateBefore, sourceBefore, refsBefore] = await Promise.all([
+    readFile(skill, 'utf8'),
+    readFile(path.join(project, '.agents/skills-sync-state.json'), 'utf8'),
+    git(['--git-dir', bare, 'show', 'main:skills/example/SKILL.md'], temp),
+    git(['--git-dir', bare, 'show-ref'], temp)
+  ]);
+  const hook = path.join(bare, 'hooks', 'pre-receive');
+  await writeFile(hook, '#!/bin/sh\necho "publication rejected by protected branch policy" >&2\nexit 1\n');
+  await chmod(hook, 0o755);
+
+  const rejected = invoke('sync', project, '--yes', '--publish');
+
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /git push failed|protected branch policy/);
+  assert.equal(await readFile(skill, 'utf8'), projectBefore);
+  assert.equal(await readFile(path.join(project, '.agents/skills-sync-state.json'), 'utf8'), stateBefore);
+  assert.equal(await git(['--git-dir', bare, 'show', 'main:skills/example/SKILL.md'], temp), sourceBefore);
+  assert.equal(await git(['--git-dir', bare, 'show-ref'], temp), refsBefore);
+});
+
+test('stops stale publication after source advances and safely retries from a fresh comparison', async t => {
+  const { bare, project, seed, temp } = await fixture(t);
+  assert.equal(invoke('sync', project, '--yes').status, 0);
+  const skill = path.join(project, '.agents/skills/example/SKILL.md');
+  await writeFile(skill, '---\nname: example\ndescription: Test fixture\n---\nproject edit after comparison\n');
+  const [projectBefore, stateBefore, sourceBefore] = await Promise.all([
+    readFile(skill, 'utf8'),
+    readFile(path.join(project, '.agents/skills-sync-state.json'), 'utf8'),
+    git(['--git-dir', bare, 'rev-parse', 'main'], temp)
+  ]);
+  const bin = path.join(temp, 'advance-bin'); await mkdir(bin);
+  const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  const wrapper = `#!/bin/sh
+if [ "$1" = fetch ] && [ ! -f '${path.join(temp, 'advanced')}' ]; then
+  touch '${path.join(temp, 'advanced')}'
+  mkdir -p '${path.join(seed, 'skills/example')}'
+  printf 'source note after comparison\\n' > '${path.join(seed, 'skills/example/source-note.md')}'
+  '${gitPath}' -C '${seed}' add skills/example/source-note.md
+  '${gitPath}' -C '${seed}' commit -m 'advance source during publication'
+  '${gitPath}' -C '${seed}' push origin main
+fi
+exec '${gitPath}' "$@"
+`;
+  const wrapperPath = path.join(bin, 'git');
+  await writeFile(wrapperPath, wrapper); await chmod(wrapperPath, 0o755);
+
+  const stale = invokeWithEnv('sync', project, { PATH: `${bin}:${process.env.PATH}` }, '--yes', '--publish');
+
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stderr, /Source branch advanced/);
+  assert.equal(await readFile(skill, 'utf8'), projectBefore);
+  assert.equal(await readFile(path.join(project, '.agents/skills-sync-state.json'), 'utf8'), stateBefore);
+  assert.notEqual(await git(['--git-dir', bare, 'rev-parse', 'main'], temp), sourceBefore);
+  assert.match(await git(['--git-dir', bare, 'show', 'main:skills/example/source-note.md'], temp), /source note after comparison/);
+  assert.doesNotMatch(await git(['--git-dir', bare, 'show', 'main:skills/example/SKILL.md'], temp), /project edit after comparison/);
+
+  const retry = invoke('sync', project, '--yes', '--publish');
+  assert.equal(retry.status, 0, `${retry.stdout}\n${retry.stderr}`);
+  assert.equal(await readFile(path.join(project, '.agents/skills/example/source-note.md'), 'utf8'), 'source note after comparison\n');
+  assert.match(await git(['--git-dir', bare, 'show', 'main:skills/example/SKILL.md'], temp), /project edit after comparison/);
+  assert.notEqual(await readFile(path.join(project, '.agents/skills-sync-state.json'), 'utf8'), stateBefore);
+});
+
 test('local-commit mode commits in the configured source checkout and records its baseline', async t => {
   const { seed, project } = await fixture(t);
   const configPath = path.join(project, '.agents/skills-sync.json');
