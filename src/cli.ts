@@ -130,7 +130,8 @@ async function openSource(config: Config): Promise<{ dir: string; cleanup: () =>
 }
 
 async function ensurePullRequest(dir: string, branch: string, base: string): Promise<void> {
-  const existing = await run('gh', ['pr', 'list', '--head', branch, '--base', base, '--json', 'number', '--jq', '.[0].number // empty'], dir);
+  const existing = await run('gh', ['pr', 'list', '--state', 'all', '--head', branch, '--base', base, '--json', 'number,state', '--jq', '.[0] | if . then "\\(.number) \\(.state)" else "" end'], dir);
+  if (/\bclosed\b|\bmerged\b/i.test(existing)) throw new Error(`Existing PR for ${branch} is closed; choose a new publication branch before publishing again.`);
   if (!existing) await run('gh', ['pr', 'create', '--head', branch, '--base', base, '--title', 'Sync selected skills', '--body', 'Synchronize configured skills from a project.'], dir);
 }
 
