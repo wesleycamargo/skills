@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { checkout, head, run } from './git.js';
 import { Config, configPath, loadConfig, validateConfig } from './config.js';
-import { applyFile, Change, discover, hash, inventory, loadState, planSkill, saveState } from './sync.js';
+import { applyFile, Change, discover, hash, inventory, loadState, planSkill, saveState, tryMerge } from './sync.js';
 
 const root = process.cwd();
 const cmd = process.argv[2] || (stdin.isTTY ? 'init' : 'status');
@@ -102,16 +102,17 @@ async function execute(): Promise<void> {
     const changes: Change[] = [];
     for (const skill of config.selection) {
       const [local, upstream] = await Promise.all([inventory(root, config.target.path, skill), inventory(source.dir, config.source.path, skill)]);
-      changes.push(...planSkill(skill, state.skills[skill], local, upstream, config.direction));
+      for (const change of planSkill(skill, state.skills[skill], local, upstream, config.direction)) changes.push(config.direction === 'bidirectional' ? await tryMerge(change) : change);
     }
     summary(changes);
     if (cmd === 'status' || cmd === 'diff') return;
     const override = config.publication.mode === 'override-main' && flags.has('--override-main') && confirmed &&
       flags.has(`--override-target=${config.source.repository}@${config.source.branch}`);
     const deletionChoices = new Set([...flags].filter(f => f.startsWith('--delete=')).map(f => f.slice('--delete='.length)));
-    const deletions = changes.filter(c => c.kind === 'delete' && deletionChoices.has(`${c.skill}/${c.file}`));
+    const deletions = changes.filter(c => c.kind === 'delete' && deletionChoices.has(`${c.skill}/${c.file}`) &&
+      (c.local === undefined ? config.direction !== 'pull' && cmd !== 'pull' : config.direction !== 'push' && cmd !== 'push'));
     const replacements = override ? changes.filter(c => c.kind === 'conflict' && c.local !== undefined) : [];
-    const applicable = [...changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push'), ...deletions, ...replacements];
+    const applicable = [...changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push' || c.kind === 'merge'), ...deletions, ...replacements];
     const conflicts = changes.filter(c => (c.kind === 'conflict' || c.kind === 'delete') && !applicable.includes(c));
     if (conflicts.length) throw new Error(`${conflicts.length} conflict or deletion proposals; resolve these before applying.`);
     if (replacements.length) for (const c of replacements) console.log(`OVERRIDE ${c.skill}/${c.file}: source ${hash(c.source)} becomes local ${hash(c.local)} in ${config.source.repository}@${config.source.branch}`);
@@ -122,14 +123,16 @@ async function execute(): Promise<void> {
       }
       return;
     }
-    const writesSource = applicable.some(c => c.kind === 'push' || replacements.includes(c) || (deletions.includes(c) && c.local === undefined));
+    const writesSource = applicable.some(c => c.kind === 'push' || c.kind === 'merge' || replacements.includes(c) || (deletions.includes(c) && c.local === undefined));
     if (writesSource && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
     if (config.publication.mode === 'override-main' && writesSource && !override) throw new Error(`Override requires --yes --override-main --override-target=${config.source.repository}@${config.source.branch}`);
     if (!confirmed && (await prompt('Apply the listed changes? (yes/no)', 'no')).toLowerCase() !== 'yes') return;
     await ensureFresh(source.dir, original, config.source.branch);
     for (const change of applicable) {
-      if (change.kind === 'pull' || (deletions.includes(change) && change.source === undefined)) await applyFile(root, config.target.path, change, 'local', deletions.includes(change));
-      else await applyFile(source.dir, config.source.path, change, 'source', deletions.includes(change));
+      const localWrite = change.kind === 'pull' || change.kind === 'merge' || (deletions.includes(change) && change.source === undefined);
+      const sourceWrite = change.kind === 'push' || change.kind === 'merge' || replacements.includes(change) || (deletions.includes(change) && change.local === undefined);
+      if (localWrite) await applyFile(root, config.target.path, change, 'local', deletions.includes(change));
+      if (sourceWrite) await applyFile(source.dir, config.source.path, change, 'source', deletions.includes(change));
     }
     if (writesSource) await publication(source.dir, config, original);
     if (config.publication.mode !== 'pull-request' && config.publication.mode !== 'branch' && config.publication.mode !== 'local-commit') {
