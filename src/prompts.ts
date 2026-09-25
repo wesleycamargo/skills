@@ -1,15 +1,11 @@
-import * as clack from '@clack/prompts';
+import { input, select, checkbox, confirm } from '@inquirer/prompts';
 import type { Readable, Writable } from 'node:stream';
-import { cancelSymbol, searchMultiselect, SearchMultiselectOptions } from './vendor/skills/search-multiselect.js';
+import type { SearchMultiselectOptions } from './vendor/skills/search-multiselect.js';
 
-/** Returned by any prompt that the user cancelled (Escape, Ctrl+C, or end of input). */
 export const CANCEL = Symbol('skills-sync.cancel');
 export type Cancel = typeof CANCEL;
-
 export interface Option<T> { value: T; label: string; hint?: string }
 export interface Spinner { start(message: string): void; stop(message: string): void; error(message: string): void }
-
-/** The prompt surface used by the wizard and the apply confirmation; tests supply scripted answers. */
 export interface Prompts {
   intro(title: string): void;
   outro(message: string): void;
@@ -17,36 +13,39 @@ export interface Prompts {
   note(message: string, title: string): void;
   log: { info(message: string): void; warn(message: string): void; error(message: string): void };
   spinner(): Spinner;
-  /** The default is shown as a placeholder: Enter accepts it, and typing replaces it. */
   text(options: { message: string; defaultValue?: string; validate?: (value: string) => string | undefined }): Promise<string | Cancel>;
   select<T>(options: { message: string; options: Option<T>[]; initialValue?: T }): Promise<T | Cancel>;
   searchMultiselect<T>(options: SearchMultiselectOptions<T>): Promise<T[] | Cancel>;
   confirm(options: { message: string; initialValue: boolean }): Promise<boolean | Cancel>;
 }
 
-export function toCancel<T>(value: T | symbol): T | Cancel {
-  return clack.isCancel(value) || value === cancelSymbol ? CANCEL : value as T;
-}
-
-/** Clack-backed prompts; tests pass their own streams. */
-export function createClackPrompts(streams: { input?: Readable; output?: Writable } = {}): Prompts {
+export function createInquirerPrompts(streams: { input?: Readable; output?: Writable } = {}): Prompts {
+  const context = { input: streams.input as NodeJS.ReadStream | undefined, output: streams.output as NodeJS.WriteStream | undefined };
+  const safe = async <T>(operation: () => Promise<T>): Promise<T | Cancel> => {
+    try { return await operation(); }
+    catch (error) {
+      if (error instanceof Error && (error.name === 'ExitPromptError' || error.name === 'AbortPromptError')) return CANCEL;
+      throw error;
+    }
+  };
   return {
-  intro: title => clack.intro(title),
-  outro: message => clack.outro(message),
-  cancel: message => clack.cancel(message),
-  note: (message, title) => clack.note(message, title),
-  log: { info: m => clack.log.info(m), warn: m => clack.log.warn(m), error: m => clack.log.error(m) },
-  spinner: () => clack.spinner(),
-  text: async ({ message, defaultValue, validate }) => toCancel(await clack.text({
-    // clack validates before it substitutes defaultValue, so validate an empty answer as the default.
-    ...streams, message, placeholder: defaultValue, defaultValue, validate: validate && (value => validate(value || defaultValue || ''))
-  })),
-  // clack's Option type is conditional on the value type; our options always carry a label.
-  select: async <T>(options: { message: string; options: Option<T>[]; initialValue?: T }) =>
-    toCancel<T>(await clack.select<T>(options as Parameters<typeof clack.select<T>>[0])),
-  searchMultiselect: async options => toCancel(await searchMultiselect(options)),
-  confirm: async options => toCancel(await clack.confirm(options)),
+    intro: title => console.log(`\n${title}\n`),
+    outro: message => console.log(message),
+    cancel: message => console.log(message),
+    note: (message, title) => console.log(`${title}\n${message}`),
+    log: { info: console.log, warn: console.warn, error: console.error },
+    spinner: () => ({ start: console.log, stop: console.log, error: console.error }),
+    text: ({ message, defaultValue, validate }) => safe(() => input({ message, default: defaultValue, validate: value => validate?.(value) ?? true }, context)),
+    select: <T>({ message, options, initialValue }: { message: string; options: Option<T>[]; initialValue?: T }) => safe(() => select({ message,
+      choices: options.map(o => ({ name: o.label, value: o.value, description: o.hint })), default: initialValue }, context)),
+    searchMultiselect: <T>(options: SearchMultiselectOptions<T>) => {
+      if (options.lockedSection) console.log(`${options.lockedSection.title}: ${options.lockedSection.items.map(i => i.label).join(', ')}${options.lockedSection.hiddenCount ? ` (+${options.lockedSection.hiddenCount} more)` : ''}`);
+      return safe(() => checkbox({ message: options.message,
+        choices: options.items.map(i => ({ name: i.label, value: i.value, description: i.hint, checked: options.initialSelected?.includes(i.value) })),
+        required: options.required }, context));
+    },
+    confirm: ({ message, initialValue }) => safe(() => confirm({ message, default: initialValue }, context)),
   };
 }
 
-export const clackPrompts = createClackPrompts();
+export const clackPrompts = createInquirerPrompts();
