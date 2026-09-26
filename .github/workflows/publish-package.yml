@@ -1,0 +1,66 @@
+name: Publish package
+
+# Publishes to npmjs only. feature/* pushes publish prereleases under the beta dist-tag;
+# main pushes and manual runs publish stable versions under latest. The version is computed
+# from [major]/[minor]/[patch] commit markers (sdlc/semver-release-bump/spec.md).
+on:
+  push:
+    branches:
+      - main
+      - feature/*
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_CHANNEL: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/') && 'beta' || 'latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm with trusted-publishing support
+        run: npm install --global npm@11.5.1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute release version
+        id: version
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          node scripts/release-version.mjs apply --channel "$RELEASE_CHANNEL"
+
+      - name: Test
+        if: steps.version.outputs.version != 'none'
+        run: npm test
+
+      - name: Build
+        if: steps.version.outputs.version != 'none'
+        run: npm run build
+
+      - name: Publish to npmjs
+        if: steps.version.outputs.version != 'none'
+        run: bash scripts/publish-npm.sh
+
+      - name: Tag stable release
+        if: steps.version.outputs.version != 'none' && env.RELEASE_CHANNEL == 'latest'
+        run: node scripts/release-version.mjs tag "${{ steps.version.outputs.version }}"
