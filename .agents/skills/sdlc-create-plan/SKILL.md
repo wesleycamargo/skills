@@ -11,7 +11,7 @@ This stage follows approved intent and specification artifacts. It creates sdlc/
 
 ## Inputs and output
 
-- Required inputs: approved intent.md and spec.md in one work-item directory.
+- Required inputs: intent.md and spec.md in one work-item directory, both with `Approval: approved`. If either is not approved, stop and ask for review.
 - Also inspect the repository, relevant instructions, current implementation, interfaces, dependencies, and engineering conventions.
 - Output: self-contained plan.md in the same work-item directory.
 
@@ -21,8 +21,10 @@ Choose an approach consistent with the repository. Identify affected components 
 
 Each task has a clear objective, meaningful work checklist, dependencies when applicable, validation criteria, and initial Status: pending. Include testing strategy and a concise resumable handover. Use this shape when useful:
 
-`markdown
+```markdown
 # Implementation Plan: <Title>
+
+Approval: draft
 
 ## Approach
 ## Affected Components
@@ -30,6 +32,7 @@ Each task has a clear objective, meaningful work checklist, dependencies when ap
 
 ### Task 1 — <Title>
 Status: pending
+Covers: <requirement and acceptance-criterion IDs, e.g. FR-1, AC-1>
 
 - [ ] Implementation step
 - [ ] Test or validation
@@ -44,10 +47,10 @@ Validation:
 Current: Not started
 Next: Task 1
 Blockers: None
-`
+```
 
-If planning exposes a genuine specification gap, report it for specification revision rather than silently changing requirements. Do not add unrelated refactoring, new functionality, or tasks.md, and do not edit code. Ask only about a material approach choice the specification leaves open, otherwise record an assumption. Ask through the agent's interactive question tool (Claude Code: AskUserQuestion), grouping related questions in one call, with 2-4 suggested options each, the recommended one first and labeled "(Recommended)", so the user answers with buttons; use plain text only when no such tool exists.
+If planning exposes a genuine specification gap, report it for specification revision rather than silently changing requirements. Do not add unrelated refactoring, new functionality, or tasks.md, and do not edit code. Ask only about a material approach choice the specification leaves open, otherwise record an assumption. Ask through the interactive question tool (Claude Code: AskUserQuestion) using the protocol in sdlc-create-intent: related questions grouped in one call, 2-4 options each, the recommended one first and labeled "(Recommended)".
 
 ## Handoff
 
-After plan approval, hand off to sdlc-execute-plan. Revise plan.md for a material approach or task change; return to specification (and intent when outcome or scope changes) when requirements change.
+Write `Approval: draft` under the title; set `Approval: approved` only after the user explicitly approves, and return it to draft on a material approach or task change. Once approved, hand off to sdlc-execute-plan. Revise plan.md for a material approach or task change; return to specification (and intent when outcome or scope changes) when requirements change.

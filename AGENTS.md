@@ -4,6 +4,7 @@
 
 - This repository contains the `@wesleycamargo/skills-sync` TypeScript CLI and existing skills.
 - Keep the CLI changes focused on the approved v1 behavior. Automating the sync CLI itself via GitHub Actions is out of scope for v1 and tracked separately in `sdlc/skills-sync-github-actions/`.
+- Changes to approved v1 behavior need an updated intent, specification, and plan under `sdlc/` before implementation. `sdlc/README.md` describes the workflow.
 - The CLI is still under validation. Do not describe it as generally available or ready for important repositories until the release checks are complete.
 - `.github/workflows/publish-package.yml` is release/build infrastructure: it tests, builds, and publishes the package to npmjs only (`beta` prereleases from `feature/*`, `latest` from `main` and manual runs). It is separate from, and does not fulfill, the out-of-scope sync-automation item above.
 

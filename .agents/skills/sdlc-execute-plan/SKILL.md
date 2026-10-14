@@ -11,26 +11,26 @@ This stage implements approved requirements after planning and is also the resum
 
 ## Inputs and output
 
-- Required inputs: approved spec.md and plan.md; read intent.md when context helps preserve outcome or scope.
+- Required inputs: spec.md and plan.md, both with `Approval: approved` (if either is not approved, stop and ask for review); read intent.md when context helps preserve outcome or scope.
 - Inspect repository instructions, current state, existing behavior, and available validation evidence before changing code.
 - Output: implementation and tests plus an updated existing plan.md. Do not create status, handover, implementation, or validation-report artifacts.
 
 ## Execution and resume
 
-Determine whether work is new or resumed. On resume, read task statuses and handover, inspect the actual repository, and reconcile discrepancies before continuing. Execute tasks in dependency order, preserve required behavior, and follow existing conventions. Test meaningful milestones and never mark work complete without its defined validation evidence.
+Determine whether work is new or resumed. On resume, read task statuses and handover, inspect the actual repository, and reconcile discrepancies before continuing. Execute tasks in dependency order, preserve required behavior, and follow existing conventions. For a task that adds or changes behavior, work test-first with the tdd skill when it is available. Test meaningful milestones and never mark work complete without its defined validation evidence.
 
-Use only pending, in-progress, completed, and locked statuses. Update checklists, validation notes, and this concise section after meaningful milestones, status changes, material validation results, blockers, deviations, or decisions affecting later work:
+Use only pending, in-progress, completed, and blocked statuses. Update checklists, validation notes, and this concise section after meaningful milestones, status changes, material validation results, blockers, deviations, or decisions affecting later work:
 
-`markdown
+```markdown
 ## Handover
 
 Current: Task 3 — <Title>
 Next: <next concrete action>
 Blockers: None
 Remaining validation: <pending evidence>
-`
+```
 
-Do not log routine commands or duplicate Git history. Do not overwrite another agent work. Distinguish required current-scope work from optional improvements, technical debt, and future follow-up. Add only required work that does not change approved requirements; record significant deviations. Return for artifact review when a discovery changes scope or specification.
+Do not log routine commands or duplicate Git history. Before editing a file, check the working tree for uncommitted changes this plan did not make. Do not overwrite them; if they conflict with a task, record a blocker. Distinguish required current-scope work from optional improvements, technical debt, and future follow-up. Add only required work that does not change approved requirements; record significant deviations. Return for artifact review when a discovery changes scope or specification.
 
 ## Reviewer-facing pull-request summary
 
