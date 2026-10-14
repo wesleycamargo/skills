@@ -125,7 +125,7 @@ async function openSource(config: Config): Promise<{ dir: string; cleanup: () =>
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     if ((error as Error).message.startsWith('Local-commit') || (error as Error).message.startsWith('Commit or stash')) throw error;
-    throw new Error('local-commit mode requires source.repository to be a local Git checkout path on the configured branch');
+    throw new Error('local-commit mode needs source.repository to be a local Git checkout path, but it is a remote URL or missing. Run `skills-sync configure` and choose another publish mode (or Read-only).');
   }
 }
 

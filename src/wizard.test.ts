@@ -145,7 +145,7 @@ test('reconfiguring prefills saved values and warns about skills and agents that
 });
 
 test('direction and mode prompts offer the documented choices with recommended defaults', async () => {
-  const { prompts, call } = scripted(base);
+  const { prompts, call } = scripted({ ...base, 'Skills Git URL or local checkout': '../source' });
   await runWizard(prompts, deps);
   const direction = call('Direction')!.options, mode = call('Publish mode')!.options;
   assert.equal(direction.initialValue, 'bidirectional');
@@ -235,4 +235,21 @@ test('init read-only choice saves the pull direction', async () => {
   const result = await runWizard(prompts, simpleDeps);
   assert.ok('config' in result);
   assert.equal(result.config.direction, 'pull');
+});
+
+test('a remote source does not offer local commit and defaults to pull request for GitHub', async () => {
+  const { prompts, call } = scripted({
+    'Skills Git URL or local checkout': 'https://github.com/example/skills', 'Publish mode': 'pull-request',
+    'Which agents do you want to install to?': [],
+  });
+  await runWizard(prompts, simpleDeps);
+  const options = call('Publish mode')!.options;
+  assert.ok(!options.options.some((o: { value: string }) => o.value === 'local-commit'));
+  assert.equal(options.initialValue, 'pull-request');
+});
+
+test('a local checkout path still defaults to local commit', async () => {
+  const { prompts, call } = scripted({ ...base, 'Skills Git URL or local checkout': '../source', 'Publish mode': 'local-commit' });
+  await runWizard(prompts, deps);
+  assert.equal(call('Publish mode')!.options.initialValue, 'local-commit');
 });

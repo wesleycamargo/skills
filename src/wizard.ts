@@ -40,6 +40,9 @@ function answer<T>(value: T | Cancel): T {
   return value as T;
 }
 
+/** A Git URL (https://, ssh://, git@host:path) rather than a local checkout path. */
+export const isRemoteRepository = (repository: string) => /^[a-z][a-z0-9+.-]*:\/\/|^[\w.-]+@[\w.-]+:/i.test(repository);
+
 export const maskCredentials = (repository: string) => repository.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]+@/i, '$1***@');
 
 export async function runWizard(prompts: Prompts, deps: WizardDeps): Promise<WizardResult> {
@@ -73,19 +76,24 @@ async function ask(prompts: Prompts, { old, advanced, discoverSkills, projectSki
   prompts.log.info(`Skills to sync: ${names.filter(skill => !ignored.includes(skill)).join(', ') || 'none'}`);
   if (ignored.length) prompts.log.info(`Ignored by .skillsignore: ${ignored.join(', ')}`);
 
+  // Local commits need a local checkout, so a remote source offers only the modes that can push.
+  const remote = isRemoteRepository(repository);
+  const offeredModes = remote ? modes.filter(m => m.value !== 'local-commit') : modes;
+  const fallbackMode: Publication = !remote ? 'local-commit' : /github\.com[:/]/.test(repository) ? 'pull-request' : 'branch';
+  const previousMode = old?.publication.mode && offeredModes.some(m => m.value === old.publication.mode) ? old.publication.mode : fallbackMode;
   let direction: Direction;
   let mode: Publication;
   if (advanced) {
     direction = answer(await prompts.select({ message: 'Direction', options: directions, initialValue: old?.direction ?? 'bidirectional' }));
-    mode = answer(await prompts.select({ message: 'Publish mode', options: modes, initialValue: old?.publication.mode ?? 'local-commit' }));
+    mode = answer(await prompts.select({ message: 'Publish mode', options: offeredModes, initialValue: previousMode }));
   } else {
     // One question covers direction and publication: read-only is the pull-only direction.
     const choice = answer(await prompts.select<Publication | 'read-only'>({
-      message: 'Publish mode', options: [...modes, { value: 'read-only', label: 'Read-only', hint: 'Only pull source changes; never write the source' }],
-      initialValue: old?.direction === 'pull' ? 'read-only' : old?.publication.mode ?? 'local-commit',
+      message: 'Publish mode', options: [...offeredModes, { value: 'read-only', label: 'Read-only', hint: 'Only pull source changes; never write the source' }],
+      initialValue: old?.direction === 'pull' ? 'read-only' : previousMode,
     }));
     direction = choice === 'read-only' ? 'pull' : old?.direction === 'push' ? 'push' : 'bidirectional';
-    mode = choice === 'read-only' ? old?.publication.mode ?? 'local-commit' : choice;
+    mode = choice === 'read-only' ? previousMode : choice;
   }
   const chosenAgents = targetPath === AGENT_DIR ? await askAgents(prompts, old) : skipAgents(prompts);
   const defaultBranch = old?.publication.branch || 'skills-sync/update';
