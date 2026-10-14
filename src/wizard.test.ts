@@ -42,7 +42,8 @@ const base = {
   'Which agents do you want to install to?': [], 'Publish mode': 'local-commit', 'Save this configuration?': true,
 };
 const discoverSkills = async () => skills;
-const deps = { discoverSkills, projectSkills: async () => ['local'], skillsIgnore: { exists: false, patterns: [] as string[] } };
+const deps = { advanced: true, discoverSkills, projectSkills: async () => ['local'], skillsIgnore: { exists: false, patterns: [] as string[] } };
+const simpleDeps = { ...deps, advanced: false };
 const saved = (config: Config) => JSON.stringify(config, null, 2) + '\n';
 
 test('bidirectional local-commit answers produce the same file as the previous wizard', async () => {
@@ -209,4 +210,29 @@ test('summary masks repository credentials and failed discovery stops the spinne
   const empty = scripted(base);
   await assert.rejects(runWizard(empty.prompts, { ...deps, discoverSkills: async () => [] }), /No skills with SKILL.md found in skills/);
   assert.ok(empty.output.some(line => line.startsWith('spinerror:')));
+});
+
+test('init asks only the repository, publish mode, and agents, and saves without a confirmation', async () => {
+  const { prompts, calls } = scripted({
+    'Skills Git URL or local checkout': 'https://example.com/skills.git', 'Publish mode': 'pull-request',
+    'Which agents do you want to install to?': [],
+  });
+  const result = await runWizard(prompts, simpleDeps);
+  assert.ok('config' in result);
+  assert.deepEqual(calls.map(c => c.options.message), ['Skills Git URL or local checkout', 'Publish mode', 'Which agents do you want to install to?']);
+  assert.equal(result.config.source.branch, 'main');
+  assert.equal(result.config.source.path, 'skills');
+  assert.equal(result.config.target.path, '.agents/skills');
+  assert.equal(result.config.direction, 'bidirectional');
+  assert.equal(result.config.publication.branch, 'skills-sync/update');
+});
+
+test('init read-only choice saves the pull direction', async () => {
+  const { prompts } = scripted({
+    'Skills Git URL or local checkout': 'https://example.com/skills.git', 'Publish mode': 'read-only',
+    'Which agents do you want to install to?': [],
+  });
+  const result = await runWizard(prompts, simpleDeps);
+  assert.ok('config' in result);
+  assert.equal(result.config.direction, 'pull');
 });

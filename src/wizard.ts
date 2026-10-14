@@ -6,6 +6,8 @@ import { AgentType, agents, getNonUniversalAgents, getUniversalAgents, getVisibl
 export interface SkillInfo { name: string; description?: string }
 export interface WizardDeps {
   old?: Config;
+  /** Ask for every field (`configure`); otherwise only the repository, publish mode, and agents. */
+  advanced?: boolean;
   /** Checks out the source, lists skills with SKILL.md, and cleans up the checkout. */
   discoverSkills(repository: string, branch: string, sourcePath: string): Promise<SkillInfo[]>;
   /** Skills with SKILL.md in the project skills directory. */
@@ -45,14 +47,14 @@ export async function runWizard(prompts: Prompts, deps: WizardDeps): Promise<Wiz
   catch (error) { if (error instanceof Cancelled) return { cancelled: true }; throw error; }
 }
 
-async function ask(prompts: Prompts, { old, discoverSkills, projectSkills, skillsIgnore }: WizardDeps): Promise<{ config: Config; skillsIgnore?: string[] }> {
+async function ask(prompts: Prompts, { old, advanced, discoverSkills, projectSkills, skillsIgnore }: WizardDeps): Promise<{ config: Config; skillsIgnore?: string[] }> {
   const text = async (message: string, defaultValue: string | undefined, validate: (value: string) => string | undefined) =>
     answer(await prompts.text({ message, defaultValue, validate })).trim();
 
   const repository = await text('Skills Git URL or local checkout', old?.source.repository, fieldError.repository);
-  const branch = await text('Source branch', old?.source.branch || 'main', v => fieldError.branch(v.trim()));
-  const sourcePath = await text('Source skills directory', old?.source.path || 'skills', v => fieldError.path(v.trim(), 'source.path'));
-  const targetPath = await text('Project skills directory', old?.target.path || AGENT_DIR, v => fieldError.path(v.trim(), 'target.path'));
+  const branch = advanced ? await text('Source branch', old?.source.branch || 'main', v => fieldError.branch(v.trim())) : old?.source.branch || 'main';
+  const sourcePath = advanced ? await text('Source skills directory', old?.source.path || 'skills', v => fieldError.path(v.trim(), 'source.path')) : old?.source.path || 'skills';
+  const targetPath = advanced ? await text('Project skills directory', old?.target.path || AGENT_DIR, v => fieldError.path(v.trim(), 'target.path')) : old?.target.path || AGENT_DIR;
 
   const spinner = prompts.spinner();
   spinner.start('Loading skills…');
@@ -71,17 +73,32 @@ async function ask(prompts: Prompts, { old, discoverSkills, projectSkills, skill
   prompts.log.info(`Skills to sync: ${names.filter(skill => !ignored.includes(skill)).join(', ') || 'none'}`);
   if (ignored.length) prompts.log.info(`Ignored by .skillsignore: ${ignored.join(', ')}`);
 
-  const direction = answer(await prompts.select({ message: 'Direction', options: directions, initialValue: old?.direction ?? 'bidirectional' }));
+  let direction: Direction;
+  let mode: Publication;
+  if (advanced) {
+    direction = answer(await prompts.select({ message: 'Direction', options: directions, initialValue: old?.direction ?? 'bidirectional' }));
+    mode = answer(await prompts.select({ message: 'Publish mode', options: modes, initialValue: old?.publication.mode ?? 'local-commit' }));
+  } else {
+    // One question covers direction and publication: read-only is the pull-only direction.
+    const choice = answer(await prompts.select<Publication | 'read-only'>({
+      message: 'Publish mode', options: [...modes, { value: 'read-only', label: 'Read-only', hint: 'Only pull source changes; never write the source' }],
+      initialValue: old?.direction === 'pull' ? 'read-only' : old?.publication.mode ?? 'local-commit',
+    }));
+    direction = choice === 'read-only' ? 'pull' : old?.direction === 'push' ? 'push' : 'bidirectional';
+    mode = choice === 'read-only' ? old?.publication.mode ?? 'local-commit' : choice;
+  }
   const chosenAgents = targetPath === AGENT_DIR ? await askAgents(prompts, old) : skipAgents(prompts);
-  const mode = answer(await prompts.select({ message: 'Publish mode', options: modes, initialValue: old?.publication.mode ?? 'local-commit' }));
+  const defaultBranch = old?.publication.branch || 'skills-sync/update';
   const publicationBranch = mode === 'branch' || mode === 'pull-request'
-    ? await text('Publication branch', old?.publication.branch || 'skills-sync/update', v => fieldError.publicationBranch(v.trim(), branch))
+    ? advanced || fieldError.publicationBranch(defaultBranch, branch)
+      ? await text('Publication branch', defaultBranch, v => fieldError.publicationBranch(v.trim(), branch))
+      : defaultBranch
     : undefined;
 
   const config = validateConfig({ version: 1, source: { repository, branch, path: sourcePath }, target: { path: targetPath },
     direction, agents: chosenAgents, publication: { mode, branch: publicationBranch } });
   prompts.note(summary(config, migrated), 'Configuration Summary');
-  if (!answer(await prompts.confirm({ message: 'Save this configuration?', initialValue: false }))) throw new Cancelled();
+  if (advanced && !answer(await prompts.confirm({ message: 'Save this configuration?', initialValue: false }))) throw new Cancelled();
   return { config, skillsIgnore: migrated };
 }
 

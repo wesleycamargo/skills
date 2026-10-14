@@ -71,11 +71,13 @@ npm install --save-dev /path/to/wesleycamargo-skills-sync-0.0.0-development.tgz
 npx --no-install skills-sync init
 ```
 
-The interactive wizard uses the same prompts as `npx skills add`. It asks for:
+`init` is a short wizard that uses the same prompts as `npx skills add`. It asks for:
 
-- the source repository, source branch, and source and project skill directories, as text inputs that are checked as you type;
-- the direction and publication mode, from lists that explain each option;
+- the source repository, as a text input that is checked as you type;
+- the publish mode, from a list that explains each option. "Read-only" saves the pull direction;
 - the agents to install to, when the project skills directory is `.agents/skills`. Agents that read `.agents/skills` directly are always included and are not saved.
+
+The source branch, source skills directory, and project skills directory use their defaults (`main`, `skills`, `.agents/skills`) or the saved values when you re-run `init`. `configure` asks for every field, including direction, branches and directories, and asks before saving.
 
 The wizard does not ask which skills to sync. Every skill with a `SKILL.md` in the source skills directory or in the project skills directory is synced, unless `.skillsignore` excludes it. The wizard lists the skills it will sync and the ones it ignores.
 
@@ -91,7 +93,7 @@ my-private-skill
 
 An ignored skill is left exactly as it is; nothing is deleted. A pull-only project skips skills that exist only in the project, and a push-only project skips skills that exist only in the source. Each skip prints a notice until you add the skill to `.skillsignore`. Configurations saved by older versions with a `selection` list keep working. Rerunning `init` replaces the list with a `.skillsignore` for the skills it left out.
 
-The wizard shows a configuration summary and asks before saving `.agents/skills-sync.json`. Re-running `init` or `configure` prefills existing choices. Press Escape or Ctrl+C at any prompt to cancel: nothing is written, and the command exits with status `0`.
+`init` shows a configuration summary and saves `.agents/skills-sync.json`; `configure` asks before saving. Re-running `init` or `configure` prefills existing choices. Press Escape or Ctrl+C at any prompt to cancel: nothing is written, and the command exits with status `0`.
 
 Setup needs an interactive terminal. For noninteractive use, commit or otherwise provide a valid `.agents/skills-sync.json` first. `init` without a terminal, or a missing or invalid configuration, fails with a concise next action instead of prompting.
 
@@ -148,6 +150,8 @@ npx skills-sync push --yes --publish
 npx skills-sync sync --yes
 npx skills-sync sync --yes --publish
 ```
+
+In an interactive terminal, `sync` is one step: it previews, asks which copy to keep for each existing skill that differs, asks about each proposed deletion, and then asks one confirmation that names any source publication. Without a terminal, or with `--yes`, nothing is prompted: pass `--publish`, `--adopt-*` and `--delete=` explicitly.
 
 `status` summarizes planned changes and `diff` shows content differences without writes. `pull`, `push`, and `sync` show their change preview before applying it; `--yes` supplies the explicit noninteractive confirmation. `--publish` is separately required before a project-side change may write the source. The configured `pull` and `push` directions prevent reverse writes.
 

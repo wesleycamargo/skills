@@ -10,6 +10,7 @@ import { Config, configPath, loadConfig } from './config.js';
 import { CANCEL, clackPrompts } from './prompts.js';
 import { applyFile, Change, discover, formatDiff, hash, inventory, loadState, planSkill, readSkillDescription, readSkillsIgnore, resolveSkills, sameFiles, saveState, State, tryMerge } from './sync.js';
 import { runWizard, SkillInfo } from './wizard.js';
+import { chooseAdoptions, chooseDeletions } from './decisions.js';
 
 const root = process.cwd();
 const cmd = process.argv[2] || (stdin.isTTY ? 'init' : 'status');
@@ -83,7 +84,7 @@ async function init(): Promise<void> {
   clackPrompts.intro('skills-sync');
   const ignoreFile = path.join(root, '.skillsignore');
   const skillsIgnore = { exists: await stat(ignoreFile).then(() => true, () => false), patterns: await readSkillsIgnore(root) };
-  const result = await runWizard(clackPrompts, { old, discoverSkills, projectSkills: targetPath => discover(root, targetPath), skillsIgnore });
+  const result = await runWizard(clackPrompts, { old, advanced: cmd === 'configure', discoverSkills, projectSkills: targetPath => discover(root, targetPath), skillsIgnore });
   if ('cancelled' in result) { clackPrompts.cancel('Setup cancelled'); return; }
   await mkdir(path.dirname(configPath(root)), { recursive: true });
   if (result.skillsIgnore?.length) await writeFile(ignoreFile, `# Skills that skills-sync does not manage (migrated from the saved selection).\n${result.skillsIgnore.join('\n')}\n`, { flag: 'wx' });
@@ -259,13 +260,30 @@ async function execute(): Promise<void> {
   try {
     const original = await head(source.dir);
     const state = await loadState(root, saved);
-    const config = await resolveConfig(saved, source.dir, state);
+    const resolved = await resolveConfig(saved, source.dir, state);
+    // Interactive runs decide on the spot; `--yes` means a noninteractive run that needs explicit flags.
+    const interactive = stdin.isTTY && !confirmed;
+    const adopted = new Map<string, 'source' | 'project'>();
+    const skipped = new Set<string>();
+    if (interactive && cmd !== 'status' && cmd !== 'diff') {
+      const differing: string[] = [];
+      for (const skill of resolved.selection) {
+        if (state.skills[skill] || flags.has(`--adopt-source=${skill}`) || flags.has(`--adopt-project=${skill}`)) continue;
+        const [local, upstream] = await Promise.all([inventory(root, resolved.target.path, skill), inventory(source.dir, resolved.source.path, skill)]);
+        if (planSkill(skill, undefined, local, upstream, resolved.direction).some(c => c.kind === 'conflict')) differing.push(skill);
+      }
+      const choices = differing.length ? await chooseAdoptions(clackPrompts, differing) : new Map();
+      if (!choices) { clackPrompts.cancel('Sync cancelled'); cancelled = true; return; }
+      for (const [skill, choice] of choices) choice === 'skip' ? skipped.add(skill) : adopted.set(skill, choice);
+    }
+    const config: Resolved = { ...resolved, selection: resolved.selection.filter(skill => !skipped.has(skill)) };
+    for (const skill of skipped) console.log(`Skipping ${skill}: no side chosen; run sync again to decide.`);
     await reconcilePending(state, config, source.dir);
     const changes: Change[] = [];
     for (const skill of config.selection) {
       const [local, upstream] = await Promise.all([inventory(root, config.target.path, skill), inventory(source.dir, config.source.path, skill)]);
       if (state.pending && sameFiles(local, state.pending.skills[skill]) && sameFiles(upstream, state.skills[skill])) continue;
-      const takeSource = flags.has(`--adopt-source=${skill}`), takeProject = flags.has(`--adopt-project=${skill}`);
+      const takeSource = flags.has(`--adopt-source=${skill}`) || adopted.get(skill) === 'source', takeProject = flags.has(`--adopt-project=${skill}`) || adopted.get(skill) === 'project';
       if (takeSource && takeProject) throw new Error(`Choose only one adoption side for ${skill}`);
       const baseline = state.skills[skill] ?? (takeSource ? local : takeProject ? upstream : undefined);
       for (const change of planSkill(skill, baseline, local, upstream, config.direction)) changes.push(config.direction === 'bidirectional' ? await tryMerge(change) : change);
@@ -277,8 +295,14 @@ async function execute(): Promise<void> {
     const override = config.publication.mode === 'override-main' && flags.has('--override-main') && confirmed &&
       flags.has(`--override-target=${config.source.repository}@${config.source.branch}`);
     const deletionChoices = new Set([...flags].filter(f => f.startsWith('--delete=')).map(f => f.slice('--delete='.length)));
-    const deletions = changes.filter(c => c.kind === 'delete' && deletionChoices.has(`${c.skill}/${c.file}`) &&
-      (c.local === undefined ? config.direction !== 'pull' && cmd !== 'pull' : config.direction !== 'push' && cmd !== 'push'));
+    const deletable = (c: Change) => c.kind === 'delete' &&
+      (c.local === undefined ? config.direction !== 'pull' && cmd !== 'pull' : config.direction !== 'push' && cmd !== 'push');
+    if (interactive) {
+      const asked = await chooseDeletions(clackPrompts, changes.filter(c => deletable(c) && !deletionChoices.has(`${c.skill}/${c.file}`)));
+      if (!asked) { clackPrompts.cancel('Sync cancelled'); cancelled = true; return; }
+      for (const key of asked) deletionChoices.add(key);
+    }
+    const deletions = changes.filter(c => deletable(c) && deletionChoices.has(`${c.skill}/${c.file}`));
     const replacements = override ? changes.filter(c => c.kind === 'conflict' && c.local !== undefined) : [];
     const applicable = [...changes.filter(c => cmd === 'pull' ? c.kind === 'pull' : cmd === 'push' ? c.kind === 'push' : c.kind === 'pull' || c.kind === 'push' || c.kind === 'merge'), ...deletions, ...replacements];
     const conflicts = changes.filter(c => (c.kind === 'conflict' || c.kind === 'delete') && !applicable.includes(c));
@@ -301,11 +325,12 @@ async function execute(): Promise<void> {
       return;
     }
     const writesSource = applicable.some(c => c.kind === 'push' || c.kind === 'merge' || replacements.includes(c) || (deletions.includes(c) && c.local === undefined));
-    if (writesSource && !publish) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
+    if (writesSource && !publish && !interactive) throw new Error('Local changes need source publication; preview only. Rerun with --publish after review.');
     if (config.publication.mode === 'override-main' && writesSource && !override) throw new Error(`Override requires --yes --override-main --override-target=${config.source.repository}@${config.source.branch}`);
     if (!confirmed) {
       if (!stdin.isTTY) throw new Error('Changes were not applied. Rerun with --yes to confirm a noninteractive run.');
-      const apply = await clackPrompts.confirm({ message: 'Apply the listed changes?', initialValue: false });
+      const message = writesSource ? `Apply the listed changes and publish to ${config.source.repository}@${config.source.branch} (${config.publication.mode})?` : 'Apply the listed changes?';
+      const apply = await clackPrompts.confirm({ message, initialValue: false });
       if (apply === CANCEL || !apply) { clackPrompts.cancel('Sync cancelled'); cancelled = true; return; }
     }
     if (!source.localCommit) await ensureFresh(source.dir, original, config.source.branch);
