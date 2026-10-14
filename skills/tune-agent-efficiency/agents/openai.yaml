@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tune Agent Efficiency"
+  short_description: "Refresh model defaults and configure economical routing for Codex, Claude Code, and other agents"
+  default_prompt: "Use $tune-agent-efficiency to check current vendor recommendations and optimize my agent's model defaults and automatic task routing."
