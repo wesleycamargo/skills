@@ -17,7 +17,7 @@ export async function run(command: string, args: string[], cwd?: string): Promis
 export async function checkout(repository: string, branch: string): Promise<{ dir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'skills-sync-'));
   try {
-    await run('git', ['clone', '--quiet', '--branch', branch, '--single-branch', repository, dir]);
+    await run('git', ['clone', '--quiet', '-c', 'core.autocrlf=false', '--branch', branch, '--single-branch', repository, dir]);
     return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
   } catch (error) { await rm(dir, { recursive: true, force: true }); throw error; }
 }

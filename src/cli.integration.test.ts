@@ -345,8 +345,20 @@ test('without a selection, a new project skill needs --publish and is then publi
   const published = invoke('sync', project, '--yes', '--publish');
   assert.equal(published.status, 0, published.stderr);
   const check = path.join(temp, 'check');
-  await git(['clone', bare, check], temp);
+  await git(['clone', '-c', 'core.autocrlf=false', bare, check], temp);
   assert.equal(await readFile(path.join(check, 'skills/local/SKILL.md'), 'utf8'), '---\nname: local\n---\nlocal\n');
   await assert.rejects(readFile(path.join(project, '.agents/skills/draft-x/SKILL.md')));
   assert.equal(await readFile(path.join(project, '.agents/skills/second/SKILL.md'), 'utf8'), '---\nname: second\n---\nsecond\n');
+});
+
+test('pulls LF content unchanged when the user has core.autocrlf=true', async t => {
+  const { project, temp } = await fixture(t);
+  const globalConfig = path.join(temp, 'gitconfig');
+  await writeFile(globalConfig, '[core]\n\tautocrlf = true\n');
+  const pull = invokeWithEnv('sync', project, { GIT_CONFIG_GLOBAL: globalConfig }, '--yes');
+  assert.equal(pull.status, 0, pull.stderr);
+  const content = await readFile(path.join(project, '.agents/skills/example/SKILL.md'), 'utf8');
+  assert.equal(content, '---\nname: example\ndescription: Test fixture\n---\none\ntwo\nthree\n');
+  const repeat = invokeWithEnv('sync', project, { GIT_CONFIG_GLOBAL: globalConfig }, '--yes');
+  assert.match(repeat.stdout, /No changes/);
 });
