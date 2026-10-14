@@ -179,7 +179,8 @@ test('opens one pull request, updates its branch, then settles after merge', { s
   await writeFile(configPath, JSON.stringify(config));
   const bin = path.join(temp, 'bin'); await mkdir(bin);
   const gitPath = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
-  const gitWrapper = `#!/bin/sh\nif [ "$1" = clone ] && [ "$6" = 'https://github.com/test/repo.git' ]; then exec '${gitPath}' clone --quiet --branch "$4" --single-branch '${bare}' "$7"; fi\nexec '${gitPath}' "$@"\n`;
+  // Match the clone by its URL rather than by argument position, so extra clone options do not bypass the mock.
+  const gitWrapper = `#!/bin/sh\nif [ "$1" = clone ]; then\n  prev=''; hit=''; branch=''; dest=''\n  for a in "$@"; do [ "$a" = 'https://github.com/test/repo.git' ] && hit=1; [ "$prev" = --branch ] && branch=$a; prev=$a; dest=$a; done\n  if [ -n "$hit" ]; then exec '${gitPath}' clone --quiet -c core.autocrlf=false --branch "$branch" --single-branch '${bare}' "$dest"; fi\nfi\nexec '${gitPath}' "$@"\n`;
   const ghWrapper = `#!/bin/sh\nif [ "$1" = pr ] && [ "$2" = list ]; then [ -f '${path.join(temp, 'pr-created')}' ] && echo '1 OPEN'; exit 0; fi\nif [ "$1" = pr ] && [ "$2" = create ]; then touch '${path.join(temp, 'pr-created')}'; exit 0; fi\nexit 0\n`;
   await writeFile(path.join(bin, 'git'), gitWrapper); await writeFile(path.join(bin, 'gh'), ghWrapper);
   await chmod(path.join(bin, 'git'), 0o755); await chmod(path.join(bin, 'gh'), 0o755);
