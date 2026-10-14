@@ -26,7 +26,15 @@ Confirmed to exist on 2026-10-14:
   in `~/.codex/agents/` or `.codex/agents/` with `name`, `description`,
   `developer_instructions`; other fields inherit from the parent)
 
-Not confirmed: the full config-reference page
-(https://developers.openai.com/codex/config-reference) and an official
-AGENTS.md discovery page were not retrieved. Look them up before relying on
-exact key names or discovery order, and follow moved pages.
+- https://learn.chatgpt.com/docs/config-file/config-reference (the
+  `developers.openai.com/codex/config-reference` URL redirects here). Keys:
+  `model`, `model_reasoning_effort`, `model_verbosity` (`low|medium|high`), and
+  `agents.max_concurrent_threads_per_session` (legacy alias `agents.max_threads`).
+- https://learn.chatgpt.com/docs/agent-configuration/agents-md (the
+  `developers.openai.com/codex/guides/agents-md` URL redirects here). Global
+  scope reads `AGENTS.override.md` if present, otherwise `AGENTS.md`, from the
+  Codex home; project files are concatenated from the root down, nearer files
+  last, up to `project_doc_max_bytes` (32 KiB default).
+
+Pages move; follow redirects and re-check key names against the installed
+version.
